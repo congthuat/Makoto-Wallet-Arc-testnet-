@@ -18,7 +18,7 @@ import {
   type Contact, type Holding, type NetworkInfo, type Prices, type Tx, type WalletApi,
 } from './wallet'
 
-export type Page = 'home' | 'agent' | 'tasks' | 'dashboard' | 'assets' | 'activity' | 'send' | 'swap' | 'bridge' | 'pay' | 'settings' | 'insights' | 'audit' | 'faucet' | 'about' | 'legal' | 'changelog' | 'status' | 'trust'
+export type Page = 'home' | 'agent' | 'tasks' | 'dashboard' | 'assets' | 'activity' | 'send' | 'swap' | 'bridge' | 'pay' | 'gifts' | 'settings' | 'insights' | 'audit' | 'faucet' | 'about' | 'legal' | 'changelog' | 'status' | 'trust'
 
 export type FeedTx = {
   hash: string; logIndex: number; block: number; timestamp: string; from: string | null; to: string | null
@@ -63,7 +63,7 @@ function useWalletState() {
   const queryClient = useQueryClient()
   const providerRevision = useSyncExternalStore(subscribeBrowserWallets, browserWalletRevision, () => 0)
   useEffect(() => { discoverBrowserWallets(); void restoreWalletConnect() }, [])
-  const [page, setPage] = useState<Page>(() => { if (typeof window === 'undefined') return 'home'; const h = window.location.hash.slice(1); if (/^pay(?:-\d{1,20})?$/.test(h)) return 'pay'; return (['about', 'legal', 'changelog', 'status', 'faucet', 'trust'] as string[]).includes(h) ? (h as Page) : 'home' })
+  const [page, setPage] = useState<Page>(() => { if (typeof window === 'undefined') return 'home'; const h = window.location.hash.slice(1); if (/^pay(?:-\d{1,20})?$/.test(h)) return 'pay'; if (/^gift(?:s|-\d{1,20}-[0-9a-fA-F]{64})?$/.test(h)) return 'gifts'; return (['about', 'legal', 'changelog', 'status', 'faucet', 'trust'] as string[]).includes(h) ? (h as Page) : 'home' })
   const [hidden, setHidden] = useLocal('mk.hidden', false)
   const [mode, setMode] = useLocal<Mode>('mk.mode', 'demo')
   const [address, setAddress] = useLocal<string>('mk.address', '')
@@ -423,12 +423,19 @@ function useWalletState() {
   const displayAddress = live ? address : DEMO_ADDRESS
   const mask = (s: string) => (hidden ? '••••••' : s)
   const go = (p: Page) => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  // A gift link opened in an already-open tab switches to the gift page.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onHash = () => { if (/^#gift-\d{1,20}-[0-9a-fA-F]{64}$/.test(window.location.hash)) setPage('gifts') }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
   // Keep the address bar in sync so a refresh reopens the page you are on (never a stale #pay-<id>).
   useEffect(() => {
     if (typeof window === 'undefined') return
     const current = window.location.hash.slice(1)
     const linkable = ['about', 'legal', 'changelog', 'status', 'faucet', 'trust'] as string[]
-    const next = page === 'pay' ? (/^pay(?:-\d{1,20})?$/.test(current) ? current : 'pay') : linkable.includes(page) ? page : ''
+    const next = page === 'pay' ? (/^pay(?:-\d{1,20})?$/.test(current) ? current : 'pay') : page === 'gifts' ? (/^gift-\d{1,20}-[0-9a-fA-F]{64}$/.test(current) ? current : 'gifts') : linkable.includes(page) ? page : ''
     if (next === current) return
     const url = `${window.location.pathname}${window.location.search}${next ? `#${next}` : ''}`
     window.history.replaceState(window.history.state, '', url)

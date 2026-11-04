@@ -17,11 +17,11 @@ import {
 } from '../lib/payRequests'
 
 const L = (vi: boolean, en: string, viText: string) => (vi ? viText : en)
-type Step = { label: string; tx: PreparedTx; onConfirmed: (receipt: Record<string, unknown> | undefined) => boolean | Promise<boolean> }
-type Phase = { kind: 'idle' } | { kind: 'review'; step: Step } | { kind: 'wallet' } | { kind: 'pending'; hash: Hex } | { kind: 'done'; hash: Hex; message: string } | { kind: 'error'; message: string; hash?: Hex }
+export type Step = { label: string; tx: PreparedTx; onConfirmed: (receipt: Record<string, unknown> | undefined) => boolean | Promise<boolean> }
+export type Phase = { kind: 'idle' } | { kind: 'review'; step: Step } | { kind: 'wallet' } | { kind: 'pending'; hash: Hex } | { kind: 'done'; hash: Hex; message: string } | { kind: 'error'; message: string; hash?: Hex }
 
 /** One reviewed write at a time: prepare → review → wallet → receipt + event evidence. */
-function useReviewedWrite() {
+export function useReviewedWrite() {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const review = (step: Step) => setPhase({ kind: 'review', step })
   const confirm = async (step: Step, success: string) => {
@@ -41,7 +41,7 @@ function useReviewedWrite() {
   return { phase, setPhase, review, confirm }
 }
 
-function TxPanel({ phase, onConfirm, onCancel, vi }: { phase: Phase; onConfirm: () => void; onCancel: () => void; vi: boolean }) {
+export function TxPanel({ phase, onConfirm, onCancel, vi }: { phase: Phase; onConfirm: () => void; onCancel: () => void; vi: boolean }) {
   if (phase.kind === 'idle') return null
   const link = (hash: Hex) => <a className="inline-flex items-center gap-1 text-neon-300 break-all" href={`${ARC.explorer}/tx/${hash}`} target="_blank" rel="noreferrer">{short(hash)} <ExternalLink size={12} /></a>
   return (

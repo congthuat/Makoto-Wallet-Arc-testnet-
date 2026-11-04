@@ -1,4 +1,5 @@
-import { checkRecipient, knownAddresses, shortAddress } from '../lib/addressSafety'
+import { assessRecipient, checkRecipient, knownAddresses, shortAddress } from '../lib/addressSafety'
+import { SafetyChecklist } from '../components/wallet/SafetyChecklist'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ArrowLeft, BookUser, Check, CheckCircle2, Circle, Clock, FileCheck2, Fuel, Loader2, PenLine, Send as SendIcon, XCircle, Zap } from 'lucide-react'
 import { useWallet } from '../lib/store'
@@ -159,12 +160,10 @@ export default function SendPage() {
     knownRecipients: [...contacts.map((c) => c.address), ...activity.map((a) => a.counterparty)],
   }), [mode, address, walletChainId, holdings, contacts, activity])
 
-  const warnings = useMemo(() => {
-    const w: string[] = []
-    if (toValid && !contact && !knownBefore) w.push('First time sending to this address. Double-check the first and last characters.')
-    if (large) w.push('Large transfer (≥ $100). Transactions on {network} are final and cannot be reversed.')
-    return w
-  }, [toValid, contact, knownBefore, large])
+  const safety = useMemo(() => assessRecipient({ recipient: to, contacts, activity, amount: amt, balance: bal, usdValue, largeUsd: settings.confirmLarge ? 100 : undefined }), [to, contacts, activity, amt, bal, usdValue, settings.confirmLarge])
+  const [riskAck, setRiskAck] = useState(false)
+  useEffect(() => { setRiskAck(false) }, [to])
+  const riskBlocked = safety.level === 'risk' && !riskAck
 
   const steps = [
     { l: 'Recipient', ok: toValid && !toErr },
@@ -212,7 +211,7 @@ export default function SendPage() {
   }, [wantReview, busy, startReview])
 
   const confirmSend = async () => {
-    if (!prepared || !brainReview || (large && !ack)) return
+    if (!prepared || !brainReview || (large && !ack) || riskBlocked) return
     try { await submitGuard.current.run(async () => {
       const p = getProvider(); if (!p) { notify(s('Wallet disconnected'), 'err'); return }
       setBusy(true)
@@ -401,16 +400,14 @@ export default function SendPage() {
                 <div className="flex justify-between gap-3 px-4 py-3"><dt className={T.mute}>{s(mode === 'connected' ? 'Maximum fee' : 'Estimated fee')}</dt><dd className="tabular-nums text-right">{feeLabel ?? s('Unavailable')}</dd></div>
                 <div className="flex justify-between gap-3 px-4 py-3 font-semibold"><dt>{s('Total')}</dt><dd className="tabular-nums text-right break-words min-w-0">{totalLabel ?? s('Unavailable')}</dd></div>
               </dl>
-              {warnings.map((w) => (
-                <div key={w} className="mk-send-warning p-3 rounded-xl border border-amber-400/20 bg-amber-500/[0.06] text-[13px] flex gap-2 min-w-0"><AlertTriangle size={16} className="shrink-0 mt-0.5" /><span className="min-w-0 break-words">{s(w).replace('{network}', ARC.name)}</span></div>
-              ))}
+              <SafetyChecklist level={safety.level} signals={safety.signals} ack={riskAck} onAck={setRiskAck} vi={lang === 'vi'} />
               {large && (
                 <label className="flex items-start gap-2.5 text-[13px] cursor-pointer">
                   <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-0.5 accent-neon-500 w-4 h-4" />
                   {tr("I've verified the recipient address and understand this can't be undone.")}
                 </label>
               )}
-              <Button variant="primary" size="lg" className="w-full" disabled={(large && !ack) || busy || (mode === 'connected' && (!prepared || !brainReview))} onClick={mode === 'connected' ? confirmSend : () => { const snapshot = brainReview ?? prepareBrainReview(brainAction(), brainContext()); const checked = revalidateBrainReview(snapshot, brainAction(), brainContext()); if (!checked.valid) { notify(s('Review expired or details changed. Review again.'), 'err'); setStage('form'); setBrainReview(null); return } setPv('Wallet signature'); setStage('preview') }}>
+              <Button variant="primary" size="lg" className="w-full" disabled={(large && !ack) || riskBlocked || busy || (mode === 'connected' && (!prepared || !brainReview))} onClick={mode === 'connected' ? confirmSend : () => { const snapshot = brainReview ?? prepareBrainReview(brainAction(), brainContext()); const checked = revalidateBrainReview(snapshot, brainAction(), brainContext()); if (!checked.valid) { notify(s('Review expired or details changed. Review again.'), 'err'); setStage('form'); setBrainReview(null); return } setPv('Wallet signature'); setStage('preview') }}>
                 {s(mode === 'connected' ? 'Confirm in wallet' : 'Preview wallet step')}
               </Button>
               {mode !== 'connected' && <p className={`text-[12px] text-center ${T.mute}`}>{s('In this preview your wallet won’t open and nothing is sent. In the full app, you approve every transfer in your own wallet.')}</p>}
@@ -455,7 +452,7 @@ export default function SendPage() {
 }
 
 /** Look-alike (address-poisoning) and first-time recipient warnings, computed locally. */
-export function RecipientSafety({ recipient, contacts, activity }: { recipient: string; contacts: readonly { name: string; address: string }[]; activity: readonly { direction?: string; counterparty?: string; counterpartyName?: string | null }[] }) {
+export function RecipientSafety({ recipient, contacts, activity }: { recipient: string; contacts: readonly { name: string; address: string }[]; activity: readonly { direction?: string; counterparty?: string; counterpartyName?: string | null; amount?: number }[] }) {
   const [, lang] = useT()
   const vi = lang === 'vi'
   const check = checkRecipient(recipient, knownAddresses(contacts, activity))
@@ -465,6 +462,14 @@ export function RecipientSafety({ recipient, contacts, activity }: { recipient: 
       <div role="alert" data-recipient-check="lookalike" className="rounded-2xl border border-rose-400/50 bg-rose-500/10 p-3.5 text-[13px] text-rose-100">
         <b>{vi ? '⚠️ Cảnh báo địa chỉ giả mạo' : '⚠️ Look-alike address warning'}</b>
         <p className="mt-1">{vi ? `Địa chỉ này trùng ký tự đầu và cuối với ${who} nhưng KHÁC ở giữa. Đây là chiêu lừa đảo phổ biến (address poisoning). Hãy dán lại địa chỉ từ nguồn tin cậy, đừng sao chép từ lịch sử giao dịch.` : `This address matches the first and last characters of ${who} but DIFFERS in the middle. This is a common scam (address poisoning). Paste the address again from a trusted source; do not copy it from transaction history.`}</p>
+      </div>
+    )
+  }
+  if (check.kind === 'first-time' && assessRecipient({ recipient, contacts, activity }).signals.some((signal) => signal.id === 'dust-sender')) {
+    return (
+      <div role="alert" data-recipient-check="dust-sender" className="rounded-2xl border border-rose-400/50 bg-rose-500/10 p-3.5 text-[13px] text-rose-100">
+        <b>{vi ? '⚠️ Địa chỉ đáng ngờ' : '⚠️ Suspicious address'}</b>
+        <p className="mt-1">{vi ? 'Địa chỉ này từng gửi cho bạn một khoản rất nhỏ và bạn chưa bao giờ gửi tiền cho nó. Kẻ gian hay làm vậy để bạn sao chép nhầm từ lịch sử giao dịch. Hãy dán lại địa chỉ từ nguồn tin cậy.' : 'This address once sent you a tiny amount and you have never paid it. Scammers do this so you copy their address from history. Paste the address again from a trusted source.'}</p>
       </div>
     )
   }

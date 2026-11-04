@@ -34,6 +34,8 @@ import {
   type IntentCheckpoint,
 } from '../lib/sendIntentCheckpoint'
 import { Button, T } from './wallet/ui'
+import { SafetyChecklist } from './wallet/SafetyChecklist'
+import { assessRecipient } from '../lib/addressSafety'
 import { SuccessBurst } from './wallet/SuccessBurst'
 import { useT } from '../lib/i18n'
 import { translate } from '../lib/i18n'
@@ -104,7 +106,7 @@ export function AgentSendCard({ params, onDone, onCancel, onStageChange }: {
   /** Read-only execution progress; parent must never equate UNKNOWN/FAILED with completion. */
   onStageChange?: (stage: AgentSendStage) => void
 }) {
-  const { mode, address, walletChainId, upsertSend, refetchWallet, holdings } = useWallet()
+  const { mode, address, walletChainId, upsertSend, refetchWallet, holdings, contacts, activity, settings } = useWallet()
   const [, lang] = useT()
   const s = useCallback((v: string) => sv(v, lang), [lang])
 
@@ -141,6 +143,10 @@ export function AgentSendCard({ params, onDone, onCancel, onStageChange }: {
   const { symbol, amount, recipient, account } = params
   const meta = TOKENS.find((t) => t.sym === symbol)
   const holding = holdings.find((h) => h.verified && h.symbol === symbol)
+  // Local pre-send safety check (look-alike, dust sender, first-time, most of balance, large).
+  const safety = assessRecipient({ recipient, contacts, activity, amount: Number(amount) || 0, balance: holding?.balance, usdValue: holding?.price != null ? (Number(amount) || 0) * holding.price : undefined, largeUsd: settings.confirmLarge ? 100 : undefined })
+  const [riskAck, setRiskAck] = useState(false)
+  const riskBlocked = safety.level === 'risk' && !riskAck
 
   // Invalidate pre-request review when account/chain changes after a successful prepare.
   // CRITICAL: in-flight stages (requesting/submitted/pending/unknown) must NOT be reset —
@@ -206,7 +212,7 @@ export function AgentSendCard({ params, onDone, onCancel, onStageChange }: {
 
   const confirmSend = async () => {
     if (BLOCKED_STAGES.includes(stageRef.current)) return
-    if (!prepared || busy) return
+    if (!prepared || busy || riskBlocked) return
 
     // Check for an unresolved intent checkpoint from a previous attempt (same intent, same wallet).
     // Each intent has its own slot in the keyed map — a different intent (B) cannot overwrite this
@@ -477,6 +483,7 @@ export function AgentSendCard({ params, onDone, onCancel, onStageChange }: {
               <dd className="font-num text-right break-words min-w-0">{totalLabel}</dd>
             </div>
           </dl>
+          <SafetyChecklist compact level={safety.level} signals={safety.signals} ack={riskAck} onAck={setRiskAck} vi={lang === 'vi'} />
           {error && (
             <div className="rounded-lg border border-rose-400/20 bg-rose-500/[0.06] px-3 py-2 text-rose-300 text-[12px] break-words">
               {error}
@@ -496,7 +503,7 @@ export function AgentSendCard({ params, onDone, onCancel, onStageChange }: {
             <Button
               variant="primary"
               className="flex-1 min-w-[160px]"
-              disabled={!prepared || busy}
+              disabled={!prepared || busy || riskBlocked}
               onClick={confirmSend}
             >
               {busy

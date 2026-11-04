@@ -116,6 +116,7 @@ export const AGENT_I18N: Record<string, [string, string, string, string]> = {
   "ALL": ["Tất cả", '', '', ''],
   // Payment requests — 2026-10-26
   "Payment requests": ["Yêu cầu thanh toán", '', '', ''],
+  "Gift links": ["Lì xì", '红包链接', 'ギフトリンク', '선물 링크'],
   // Design 2.0 — 2026-10-26
   "TESTNET": ["TESTNET", '', '', ''],
   "Trust Center": ["Trung tâm an toàn", '', '', ''],
