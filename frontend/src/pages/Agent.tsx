@@ -580,20 +580,63 @@ export default function AgentPage() {
   }, [msgs, chatKey, tr, savedChat.length])
   // Voice input (browser speech recognition, where available).
   const [listening, setListening] = useState(false)
-  const recognitionRef = useRef<{ stop: () => void } | null>(null)
+  const recognitionRef = useRef<{ stop: () => void; abort?: () => void } | null>(null)
   const speechCtor = typeof window !== 'undefined' ? ((window as unknown as { SpeechRecognition?: new () => unknown; webkitSpeechRecognition?: new () => unknown }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: new () => unknown }).webkitSpeechRecognition) : undefined
+  useEffect(() => () => { try { recognitionRef.current?.abort?.() } catch { /* already stopped */ } }, [])
+  const voiceVi = lang === 'vi'
+  const [voiceHint, setVoiceHint] = useState('')
+  const isIOS = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+  const voiceHelp = (code: string) => {
+    const keyboardTip = voiceVi ? ' Bạn có thể bấm biểu tượng micro trên bàn phím điện thoại để đọc thay vì gõ.' : ' You can also tap the mic on your phone keyboard to dictate.'
+    if (code === 'unsupported') return (voiceVi ? 'Trình duyệt này chưa hỗ trợ nói để nhập.' : 'This browser does not support voice input.') + keyboardTip
+    if (code === 'not-allowed' || code === 'service-not-allowed') return isIOS
+      ? (voiceVi ? 'Chưa có quyền dùng micro. Vào Cài đặt → Safari → Micro → Cho phép, và bật Cài đặt → Siri → Đọc chính tả.' : 'Microphone is not allowed. Go to Settings → Safari → Microphone → Allow, and turn on Dictation in Settings.') + keyboardTip
+      : (voiceVi ? 'Chưa có quyền dùng micro. Bấm biểu tượng ổ khóa cạnh địa chỉ web → Quyền → Micro → Cho phép, rồi thử lại.' : 'Microphone is not allowed. Tap the lock icon next to the address → Permissions → Microphone → Allow, then try again.')
+    if (code === 'no-speech') return voiceVi ? 'Không nghe thấy tiếng. Bấm micro rồi nói ngay nhé.' : 'No speech heard. Tap the mic and start speaking.'
+    if (code === 'audio-capture') return (voiceVi ? 'Không mở được micro. Có thể app khác đang dùng micro.' : 'Could not open the microphone. Another app may be using it.') + keyboardTip
+    if (code === 'network') return (voiceVi ? 'Nhận giọng nói cần kết nối mạng ổn định. Thử lại nhé.' : 'Voice input needs a stable connection. Please try again.') + keyboardTip
+    if (code === 'language-not-supported') return (voiceVi ? 'Trình duyệt chưa nhận được tiếng Việt.' : 'This language is not supported by the browser.') + keyboardTip
+    return (voiceVi ? 'Chưa nghe được. Thử lại nhé.' : 'Could not hear you. Please try again.') + keyboardTip
+  }
   const toggleVoice = () => {
-    if (listening) { recognitionRef.current?.stop(); return }
-    if (!speechCtor) return
-    const recognition = new speechCtor() as { lang: string; interimResults: boolean; onresult: (e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void; onend: () => void; onerror: () => void; start: () => void; stop: () => void }
-    recognition.lang = lang === 'vi' ? 'vi-VN' : 'en-US'
+    if (listening) { try { recognitionRef.current?.stop() } catch { setListening(false) } return }
+    setVoiceHint('')
+    if (!speechCtor) { setVoiceHint(voiceHelp('unsupported')); return }
+    type Rec = { lang: string; interimResults: boolean; continuous: boolean; maxAlternatives: number; onresult: (e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }> }) => void; onend: () => void; onerror: (e: { error?: string }) => void; start: () => void; stop: () => void; abort: () => void }
+    let recognition: Rec
+    try { recognition = new speechCtor() as Rec } catch { setVoiceHint(voiceHelp('unsupported')); return }
+    recognition.lang = ({ vi: 'vi-VN', en: 'en-US', zh: 'zh-CN', ja: 'ja-JP', ko: 'ko-KR' } as Record<string, string>)[lang] ?? 'en-US'
     recognition.interimResults = true
-    recognition.onresult = (event) => setInput(Array.from(event.results).map((result) => result[0]?.transcript ?? '').join(' ').trim())
-    recognition.onend = () => { setListening(false); recognitionRef.current = null }
-    recognition.onerror = () => { setListening(false); recognitionRef.current = null }
+    recognition.continuous = false
+    recognition.maxAlternatives = 1
+    const before = input.trim()
+    let heard = ''
+    let failed = false
+    recognition.onresult = (event) => {
+      // Android Chrome repeats earlier words inside later results ("gửi", "gửi 5", "gửi 5 USDC"); keep the longest version instead of joining duplicates.
+      let text = ''
+      for (const result of Array.from(event.results)) {
+        const piece = (result[0]?.transcript ?? '').trim()
+        if (!piece) continue
+        if (piece.toLowerCase().startsWith(text.toLowerCase())) text = piece
+        else if (!text.toLowerCase().endsWith(piece.toLowerCase())) text = `${text} ${piece}`
+      }
+      heard = text.trim()
+      setInput(before ? `${before} ${heard}` : heard)
+    }
+    recognition.onerror = (event) => {
+      failed = true
+      const code = event?.error ?? ''
+      if (code !== 'aborted') setVoiceHint(voiceHelp(code))
+    }
+    recognition.onend = () => {
+      setListening(false)
+      recognitionRef.current = null
+      if (!failed && !heard) setVoiceHint(voiceHelp('no-speech'))
+    }
     recognitionRef.current = recognition
-    setListening(true)
-    recognition.start()
+    try { recognition.start(); setListening(true) }
+    catch { recognitionRef.current = null; setListening(false); setVoiceHint(voiceHelp('start')) }
   }
   const messageText = (message: Msg) => {
     if (message.quick) return renderHomeAnswer(message.quick, locale, w.mask, w).text
@@ -1149,11 +1192,19 @@ export default function AgentPage() {
           <div className="mk-field-shell flex items-center gap-2 rounded-xl border border-white/[0.08] bg-black/25 p-1.5 transition">
             <input value={input} onChange={(e) => setInput(e.target.value)} onPaste={(e) => { const item = Array.from(e.clipboardData.items).find((entry) => entry.type.startsWith('image/')); if (item) { e.preventDefault(); void attachImage(item.getAsFile()) } }} placeholder={tr(SAMPLE_PROMPTS.send)} aria-label={tr('Message Makoto')} className="flex-1 min-w-0 bg-transparent px-2.5 py-2 text-[14px] outline-none placeholder:text-[#6f6d7a]" />
             {!typing && <button type="button" onClick={() => fileRef.current?.click()} aria-label={lang === 'vi' ? 'Gửi ảnh chụp màn hình' : 'Attach a screenshot'} title={lang === 'vi' ? 'Gửi ảnh biểu đồ hoặc giao dịch' : 'Attach a chart or transaction screenshot'} className={`h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg ${T.sub} hover:text-white hover:bg-white/[0.06]`}><ImagePlus size={16} /></button>}
-            {speechCtor && !typing && <button type="button" onClick={toggleVoice} aria-pressed={listening} aria-label={lang === 'vi' ? (listening ? 'Dừng nghe' : 'Nói để nhập') : (listening ? 'Stop listening' : 'Voice input')} className={`h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg ${listening ? 'bg-rose-500/20 text-rose-200 animate-pulse' : `${T.sub} hover:text-white hover:bg-white/[0.06]`}`}>{listening ? <MicOff size={16} /> : <Mic size={16} />}</button>}
+            {!typing && <button type="button" onClick={toggleVoice} aria-pressed={listening} aria-label={lang === 'vi' ? (listening ? 'Dừng nghe' : 'Nói để nhập') : (listening ? 'Stop listening' : 'Voice input')} className={`h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg ${listening ? 'bg-rose-500/20 text-rose-200 animate-pulse' : `${T.sub} hover:text-white hover:bg-white/[0.06]`}`}>{listening ? <MicOff size={16} /> : <Mic size={16} />}</button>}
             {typing
               ? <button type="button" onClick={stop} className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg bg-white/[0.1] text-white hover:bg-white/[0.16]" aria-label={lang === 'vi' ? 'Dừng trả lời' : 'Stop answering'} title={lang === 'vi' ? 'Dừng' : 'Stop'}><Square size={14} fill="currentColor" /></button>
               : <button disabled={!input.trim() && !attachment} className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg bg-neon-500 text-[#0b0b10] hover:bg-neon-400 disabled:bg-white/[0.06] disabled:text-white/30" aria-label={tr('Send message')}><ArrowUp size={17} /></button>}
           </div>
+          {listening && <p className="mt-2 px-1 text-[12.5px] text-rose-200" data-voice-listening>{voiceVi ? 'Đang nghe… bạn nói đi, ngừng nói là tự xong.' : 'Listening… speak now, it stops when you pause.'}</p>}
+          {voiceHint && !listening && (
+            <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-300/30 bg-amber-300/[0.06] p-2.5 text-[12.5px] text-amber-200" role="status" data-voice-hint>
+              <MicOff size={14} className="mt-0.5 shrink-0" />
+              <p className="flex-1 min-w-0">{voiceHint}</p>
+              <button type="button" onClick={() => setVoiceHint('')} aria-label={voiceVi ? 'Đóng' : 'Close'} className="h-6 w-6 shrink-0 inline-flex items-center justify-center rounded-md hover:bg-white/[0.08]"><X size={13} /></button>
+            </div>
+          )}
         </form>
       </Card>
       <aside className="hidden lg:block sticky top-[76px]"><ContextPanel flow={current} actions={msgs.length ? agentActions : []} onAction={runAction} memoryNotes={memory.notes} onRemoveNote={(id) => updateMemory((current) => removeNote(current, id))} /></aside>
