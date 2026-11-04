@@ -272,7 +272,6 @@ function ClaimCard({ id, keyHex, vi, relayer }: { id: bigint; keyHex: Hex; vi: b
     <>
       <div className="text-[12px] uppercase tracking-[0.14em] text-amber-200/90">{L(vi, 'A gift from', 'Lì xì từ')} {short(gift.creator)}</div>
       {gift.memo && <p className="mt-2 text-[20px] font-bold leading-snug break-words text-amber-50">“{gift.memo}”</p>}
-      <p className="mt-2 text-[13px] text-amber-100/90">{amountOf(gift.total, gift.token)} · {gift.shareCount} {L(vi, gift.shareCount === 1 ? 'person' : 'people', 'người')} · {L(vi, 'claimed', 'đã nhận')} {gift.claimedCount}/{gift.shareCount}</p>
     </>
   )
 
