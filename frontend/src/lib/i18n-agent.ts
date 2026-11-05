@@ -200,7 +200,7 @@ export const AGENT_I18N: Record<string, [string, string, string, string]> = {
   'Confirm in wallet': ['Xác nhận trong ví', '在钱包中确认', 'ウォレットで確認', '지갑에서 확인'],
   'Waiting for your wallet…': ['Đang chờ ví của bạn…', '正在等待钱包…', 'ウォレットを待っています…', '지갑을 기다리는 중…'],
   'Waiting for the payment to confirm on Arc…': ['Đang chờ thanh toán xác nhận trên Arc…', '正在等待 Arc 上确认付款…', 'Arc での支払い確認を待っています…', 'Arc에서 결제 확인을 기다리는 중…'],
-  'Payments go straight to': ['Thanh toán chuyển thẳng tới', '付款直接发送至', '支払いは次へ直接送信されます', '결제는 다음 주소로 바로 전송됩니다'],
+  'To': ['Tới', '发至', '送信先', '받는 곳'],
   '{n} free messages left today': ['Hôm nay còn {n} lượt miễn phí', '今天还剩 {n} 次免费', '本日あと {n} 回無料', '오늘 무료 {n}회 남음'],
   '{n} credits · {c} per message': ['{n} credit · {c} mỗi tin nhắn', '{n} 额度 · 每条 {c}', '{n} クレジット · 1 回 {c}', '{n} 크레딧 · 메시지당 {c}'],
   'Add credits': ['Nạp credit', '充值额度', 'クレジットを追加', '크레딧 충전'],

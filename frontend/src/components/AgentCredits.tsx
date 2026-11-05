@@ -25,9 +25,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
  * anything is credited, so this component never has to be trusted with the amount.
  */
 export function AgentCreditsPanel({ state, onState, open, onClose }: { state: CreditState | undefined; onState: (next: CreditState) => void; open: boolean; onClose: () => void }) {
-  const [tr, lang] = useT()
+  const [tr] = useT()
   const w = useWallet()
-  const vi = lang === 'vi'
   const [phase, setPhase] = useState<PayPhase>({ kind: 'idle' })
   const [connectOpen, setConnectOpen] = useState(false)
   const [verifyPending, setVerifyPending] = useState(false)
@@ -154,7 +153,7 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
                   <div className="font-semibold">{tr('Review before signing')}</div>
                   <p>{tr('Send {usdc} USDC on Arc to Makoto. Your wallet pays about {fee} USDC in network fees.')
                     .replace('{usdc}', phase.pack.usdc).replace('{fee}', phase.tx.feeUsdc.toFixed(6))}</p>
-                  <p className={`text-[11.5px] break-all font-mono ${T.mute}`}>{feeAddress}</p>
+                  <p className={`text-[11.5px] font-mono ${T.mute}`} title={feeAddress}>{tr('To')} {feeAddress.slice(0, 6)}…{feeAddress.slice(-4)}</p>
                   <div className="flex gap-2">
                     <Button size="sm" variant="primary" onClick={() => void confirm(phase.pack, phase.tx)}>{tr('Confirm in wallet')}</Button>
                     <Button size="sm" onClick={() => setPhase({ kind: 'idle' })}>{tr('Cancel')}</Button>
@@ -171,8 +170,6 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
               )}
               {phase.kind === 'error' && <p role="alert" className="rounded-xl border border-rose-400/25 bg-rose-500/[0.05] p-3 text-[12.5px] text-rose-200">{phase.message}</p>}
 
-              {feeAddress && <p className={`text-[11.5px] break-all ${T.mute}`}>{tr('Payments go straight to')} <span className="font-mono">{feeAddress}</span></p>}
-              <p className={`text-[11.5px] ${T.mute}`}>{vi ? 'Thanh toán chuyển thẳng từ ví của bạn, không qua trung gian.' : 'Payment moves from your own wallet with no middleman.'}</p>
             </>
           )}
         </div>
