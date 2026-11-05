@@ -163,6 +163,8 @@ export default function FloatingAgent() {
         history.current = appendChatHistory(history.current, { role: 'assistant', content: response.text })
       } else if (response.aborted) {
         update({ text: visibleStreamText(streamed) || (vi ? 'Đã dừng.' : 'Stopped.'), streaming: false, status: undefined })
+      } else if (response.code === 'AGENT_CREDITS_REQUIRED') {
+        update({ text: tr('Your free Agent messages for today are used up. Add credits to keep going.'), streaming: false, status: undefined })
       } else {
         update({ text: vi ? 'Agent đang bận, bạn thử lại sau ít phút nhé.' : 'The Agent is busy. Please try again in a few minutes.', streaming: false, status: undefined })
       }

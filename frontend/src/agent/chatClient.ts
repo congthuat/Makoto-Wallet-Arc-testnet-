@@ -18,7 +18,7 @@ export type ChatSource = 'REAL_PROVIDER' | 'LOCAL_FALLBACK' | 'DETERMINISTIC_TOO
 export type ChatTaskDraft = Readonly<
   | { type: 'CONDITION_MONITOR'; condition: { metric: 'TOKEN_PRICE' | 'TOKEN_BALANCE'; asset: 'USDC' | 'EURC' | 'cirBTC' | 'BTC' | 'ETH' | 'SOL'; operator: 'LT' | 'LTE' | 'GT' | 'GTE'; threshold: string; checkIntervalMinutes: number }; schedule: null }
   | { type: 'SCHEDULED_AUTOMATION'; condition: null; schedule: { kind: 'DAILY'; time: string; action: 'PORTFOLIO_SUMMARY' | 'ACTIVITY_SUMMARY' | 'BALANCE_CHECK' | 'DAILY_BRIEFING' } }>
-export type ChatResponse = Readonly<{ ok: true; text: string; source: 'REAL_PROVIDER'; sources?: readonly ChatDataSource[]; proposal?: ChatProposal; plan?: readonly PlanStep[]; task?: ChatTaskDraft; memory?: readonly ChatMemoryUpdate[]; charts?: readonly ChatChart[]; followups?: readonly string[] } | { ok: false; reason: string; source: 'LOCAL_FALLBACK'; aborted?: boolean }>
+export type ChatResponse = Readonly<{ ok: true; text: string; source: 'REAL_PROVIDER'; sources?: readonly ChatDataSource[]; proposal?: ChatProposal; plan?: readonly PlanStep[]; task?: ChatTaskDraft; memory?: readonly ChatMemoryUpdate[]; charts?: readonly ChatChart[]; followups?: readonly string[]; credits?: unknown } | { ok: false; reason: string; source: 'LOCAL_FALLBACK'; aborted?: boolean; code?: string }>
 export type ChatStreamEvent = Readonly<{ type: 'status'; tool: string; source: string | null } | { type: 'delta'; text: string }>
 /** What the Agent may know about the user: notes, contact NAMES and preferences (no addresses). */
 export type ChatMemoryContext = Readonly<{ notes: readonly string[]; contacts: readonly string[]; preferences: Readonly<{ bridgeSpeed?: 'FAST' | 'SLOW' }> }>
@@ -108,7 +108,8 @@ export function parseTaskDraft(value: unknown): ChatTaskDraft | undefined {
 /** Validates a backend reply; anything malformed becomes a local fallback signal. */
 export function parseChatReply(payload: unknown, status = 200): ChatResponse {
   if (!payload || typeof payload !== 'object' || typeof (payload as { text?: unknown }).text !== 'string' || !(payload as { text: string }).text.trim()) {
-    return { ok: false, reason: typeof (payload as { error?: unknown })?.error === 'string' ? (payload as { error: string }).error : `Chat request failed (${status})`, source: 'LOCAL_FALLBACK' }
+    const code = typeof (payload as { code?: unknown })?.code === 'string' ? (payload as { code: string }).code : undefined
+    return { ok: false, reason: typeof (payload as { error?: unknown })?.error === 'string' ? (payload as { error: string }).error : `Chat request failed (${status})`, source: 'LOCAL_FALLBACK', ...(code ? { code } : {}) }
   }
   const value = payload as Record<string, unknown>
   const sources = parseSources(value.sources)
@@ -122,6 +123,7 @@ export function parseChatReply(payload: unknown, status = 200): ChatResponse {
     ok: true, text: (value.text as string).trim().slice(0, 6000), source: 'REAL_PROVIDER',
     ...(sources.length ? { sources } : {}), ...(proposal ? { proposal } : {}), ...(plan ? { plan } : {}), ...(task ? { task } : {}),
     ...(memory.length ? { memory } : {}), ...(charts.length ? { charts } : {}), ...(followups.length ? { followups } : {}),
+    ...(value.credits && typeof value.credits === 'object' ? { credits: value.credits } : {}),
   }
 }
 
@@ -141,7 +143,7 @@ export async function requestMakotoChatStream(input: ChatRequestInput & { onEven
       const response = await fetcher(api('agent/chat/stream'), { method: 'POST', headers: { 'content-type': contentType(input), accept: 'text/event-stream' }, body: requestBody(input), signal })
       const type = response.headers?.get?.('content-type') ?? ''
       if (!response.ok || !response.body || !type.includes('text/event-stream')) {
-        if (response.status === 400 || response.status === 429) return parseChatReply(await response.json().catch(() => undefined), response.status)
+        if (response.status === 400 || response.status === 401 || response.status === 402 || response.status === 429) return parseChatReply(await response.json().catch(() => undefined), response.status)
         return requestMakotoChat(input)
       }
       const reader = response.body.getReader()
@@ -162,7 +164,7 @@ export async function requestMakotoChatStream(input: ChatRequestInput & { onEven
         if (event === 'delta' && typeof record?.text === 'string') { shown = true; input.onEvent({ type: 'delta', text: record.text }) }
         else if (event === 'status' && typeof record?.tool === 'string') input.onEvent({ type: 'status', tool: record.tool.slice(0, 40), source: typeof record.source === 'string' ? record.source.slice(0, 40) : null })
         else if (event === 'done') final = parseChatReply(value)
-        else if (event === 'error') final = { ok: false, reason: typeof record?.error === 'string' ? record.error : 'Chat service unavailable', source: 'LOCAL_FALLBACK' }
+        else if (event === 'error') final = { ok: false, reason: typeof record?.error === 'string' ? record.error : 'Chat service unavailable', source: 'LOCAL_FALLBACK', ...(typeof record?.code === 'string' ? { code: record.code } : {}) }
       }
       for (;;) {
         const { value, done } = await reader.read()
@@ -208,7 +210,7 @@ export async function requestMakotoChat(input: ChatRequestInput): Promise<ChatRe
       // response.json() is inside the deadline: if it hangs, the outer race
       // fires the timeout rejection before the await can return.
       const payload: unknown = await response.json().catch(() => undefined)
-      if (!response.ok) return parseChatReply({ error: (payload as { error?: unknown })?.error }, response.status)
+      if (!response.ok) return parseChatReply(payload && typeof payload === 'object' ? payload : { error: (payload as { error?: unknown })?.error }, response.status)
       return parseChatReply(payload, response.status)
     }, CHAT_TIMEOUT_MS, controller)
   } catch (error) {

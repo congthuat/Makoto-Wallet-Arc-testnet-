@@ -2,9 +2,44 @@ const express = require('express')
 const { Router } = express
 const { rateLimit } = require('express-rate-limit')
 const { generateAgentResponse, validLocale, safeImage } = require('../lib/llm')
+const { ARC_CHAIN_ID, getTaskAuth } = require('../lib/taskAuth')
+const { anonKey, canChat, chargeMessage, config: feeConfig, feeState, normaliseAddress } = require('../lib/agentFees')
+const { getCreditStore } = require('../lib/creditStore')
 
 const router = Router()
+router.use(getTaskAuth().taskSession)
 const isAddress = (value) => typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value)
+
+/**
+ * Who pays for this message. A signed-in wallet is authoritative; otherwise the connected
+ * wallet address sent by the app is trusted only for the free daily allowance.
+ */
+function billingFor(req, body) {
+  const address = req.session?.address
+  const verified = typeof address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(address) && req.session.chainId === ARC_CHAIN_ID ? address : null
+  const settings = feeConfig()
+  // A visitor with no wallet still gets the free daily allowance, counted per IP.
+  const payer = verified || normaliseAddress(body?.address) || (settings.enabled ? anonKey(req.ip) : null)
+  return { payer, allowCredits: Boolean(verified), settings, store: getCreditStore() }
+}
+
+/** Charge once the answer exists, so a failed reply never costs the user anything. */
+function settleChat(payer, billing) {
+  if (!payer) return undefined
+  try {
+    const receipt = chargeMessage(payer, billing)
+    return receipt ? { charged: receipt.charged, kind: receipt.kind } : undefined
+  } catch { return undefined }
+}
+
+/** 402 payload the app turns into the top-up card. */
+function creditsRequired(res, payer) {
+  return res.status(402).json({
+    code: 'AGENT_CREDITS_REQUIRED',
+    error: 'Your free Agent messages for today are used up. Add credits to keep going.',
+    credits: feeState(payer),
+  })
+}
 const perMinute = Number(process.env.AGENT_RATE_LIMIT_PER_MIN)
 
 // Each chat can trigger several paid LLM calls; bound abuse per client.
@@ -65,11 +100,14 @@ router.get('/eval', (_req, res) => {
 router.post('/chat', chatLimiter, imageBody, async (req, res) => {
   const parsed = parseRequest(req.body)
   if (parsed.error) return res.status(400).json({ error: parsed.error })
+  const billing = billingFor(req, parsed.value)
+  if (!canChat(billing.payer, billing)) return creditsRequired(res, billing.payer)
   let result
   try { result = await generateAgentResponse(parsed.value) }
   catch { return res.status(502).json({ error: 'Chat service failed before a provider response.', code: 'LLM_BACKEND_ERROR' }) }
   if (!result.ok) return res.status(statusFor(result.code)).json({ error: result.message, code: result.code })
-  res.set('Cache-Control', 'no-store').json(replyPayload(result))
+  const charge = settleChat(billing.payer, billing)
+  res.set('Cache-Control', 'no-store').json({ ...replyPayload(result), credits: feeState(billing.payer, billing.store, billing.settings), ...(charge ? { charged: charge } : {}) })
 })
 
 /**
@@ -82,6 +120,8 @@ router.post('/chat', chatLimiter, imageBody, async (req, res) => {
 router.post('/chat/stream', chatLimiter, imageBody, async (req, res) => {
   const parsed = parseRequest(req.body)
   if (parsed.error) return res.status(400).json({ error: parsed.error })
+  const billing = billingFor(req, parsed.value)
+  if (!canChat(billing.payer, billing)) return creditsRequired(res, billing.payer)
   const controller = new AbortController()
   res.on('close', () => { if (!res.writableEnded) controller.abort() })
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
@@ -98,7 +138,10 @@ router.post('/chat/stream', chatLimiter, imageBody, async (req, res) => {
       },
     })
     if (!result.ok) send('error', { error: result.message, code: result.code, status: statusFor(result.code) })
-    else send('done', replyPayload(result))
+    else {
+      const charge = settleChat(billing.payer, billing)
+      send('done', { ...replyPayload(result), credits: feeState(billing.payer, billing.store, billing.settings), ...(charge ? { charged: charge } : {}) })
+    }
   } catch {
     send('error', { error: 'Chat service failed before a provider response.', code: 'LLM_BACKEND_ERROR', status: 502 })
   } finally {

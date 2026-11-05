@@ -27,6 +27,8 @@ import { addNote, contactInText, contactSaveCheck, loadAgentMemory, memoryForReq
 import { describeStep, planStatuses, planStepsFromText, stepCommand, type PlanStep } from '../lib/agentPlan'
 import { AreaChart } from '../components/wallet/charts'
 import { AgentMarkdown } from '../components/AgentMarkdown'
+import { AgentCreditsBar, AgentCreditsPanel } from '../components/AgentCredits'
+import { parseCreditState, readCredits, type CreditState } from '../lib/credits'
 import { buildAgentActions, hasPendingStrategy, type AgentAction, type AgentActionIcon } from '../lib/agentActions'
 import { appendChatHistory, isWalletContextFollowUp } from '../agent/chatContext'
 import { formatCurrentDateTime, getCurrentDateTime, type CurrentDateTime } from '../agent/time'
@@ -87,6 +89,8 @@ type Msg = { id: string; role: 'user' | 'agent'; text: string; rows?: [string, s
   /** The user question that produced this AI reply (for "Ask again"). */
   question?: string
   stopped?: boolean
+  /** The free allowance is used up: offer the credit top-up. */
+  topUp?: boolean
   /** Screenshot attached to a user message (kept in memory only, never saved). */
   image?: string
 }
@@ -526,6 +530,14 @@ export default function AgentPage() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [typing, setTyping] = useState(false)
+  const [credits, setCredits] = useState<CreditState | undefined>(undefined)
+  const [creditsOpen, setCreditsOpen] = useState(false)
+  // Refresh whenever the paying wallet or its verification changes.
+  useEffect(() => {
+    let alive = true
+    void readCredits().then((next) => { if (alive) setCredits(next) })
+    return () => { alive = false }
+  }, [w.address, w.taskAuthenticated])
   const end = useRef<HTMLDivElement>(null)
   const chatHistory = useRef<ChatHistoryItem[]>([])
   const current = [...msgs].reverse().find((m) => m.flow)?.flow
@@ -816,11 +828,16 @@ export default function AgentPage() {
           onStream?.({ text: visibleStreamText(streamed), toolStatus })
         },
       })
+      if (!response.ok && response.code === 'AGENT_CREDITS_REQUIRED') {
+        void readCredits().then(setCredits)
+        return { id: nid(), role: 'agent', text: tr('Your free Agent messages for today are used up.'), topUp: true, source: 'LOCAL_FALLBACK' }
+      }
       if (!response.ok && response.aborted) {
         const partial = visibleStreamText(streamed)
         return { id: nid(), role: 'agent', text: partial ? `${partial}\n\n_${lang === 'vi' ? 'Đã dừng.' : 'Stopped.'}_` : (lang === 'vi' ? 'Đã dừng.' : 'Stopped.'), source: 'REAL_PROVIDER', conversation: Boolean(partial), stopped: true, question: q }
       }
       if (response.ok) {
+        if (response.credits) setCredits(parseCreditState(response.credits))
         const extra: Partial<Msg> = { dataSources: response.sources, question: q, ...(response.followups ? { followups: response.followups } : {}), ...(response.charts ? { charts: response.charts } : {}), ...applyMemoryUpdates(response.memory) }
         if (response.plan) return { id: nid(), role: 'agent', text: response.text, sample: false, conversation: true, source: 'REAL_PROVIDER', plan: { steps: response.plan, done: response.plan.map(() => false) }, ...extra }
         if (response.proposal) return actionMessageFromStep(response.proposal, response.text, extra)
@@ -833,6 +850,7 @@ export default function AgentPage() {
     const chat = async (topic: typeof routed.topic, intent: 'CHAT' | 'INFORMATION', toolResult?: unknown, fallback?: string) => {
       if (aiUnavailable) return { text: fallback || localChatReply(topic, locale, true), source: 'LOCAL_FALLBACK' as const }
       const response = await requestMakotoChat({ message: q, topic, context: { locale: lang, mode: w.mode, ...(w.mode === 'connected' ? { chain: ARC.name as 'Arc Testnet' } : {}), intent, toolResult }, history, address: w.mode !== 'demo' ? w.address : undefined, memory: requestMemory() })
+      if (response.ok && response.credits) setCredits(parseCreditState(response.credits))
       return response.ok ? { text: response.text, source: response.source } : { text: fallback || localChatReply(topic, locale, true), source: 'LOCAL_FALLBACK' as const }
     }
     if (routed.category === 'CHAT') {
@@ -1173,6 +1191,7 @@ export default function AgentPage() {
                 })()}
                 {m.task && <TaskReviewCard candidate={m.task} tasks={w.tasks} created={m.taskAdded} onCreate={async () => { await w.createTask(m.task!); w.notify(taskText('created', lang === 'vi' ? 'vi' : 'en')); setMsgs((messages) => messages.map((entry) => entry.id === m.id ? { ...entry, taskAdded: true } : entry)) }} />}
                 {m.taskAdded && <Button size="sm" className="mt-2" onClick={() => w.go('tasks')}>{tr('View in Tasks')}</Button>}
+                {m.topUp && <Button size="sm" variant="primary" className="mt-2" onClick={() => setCreditsOpen(true)}><Sparkles size={13} /> {tr('Add credits to keep going')}</Button>}
                 {m.link && <Button size="sm" className="mt-2" onClick={() => w.go(m.link!.page)}>{m.link.taskTextKey ? taskText(m.link.taskTextKey, locale) : tr(m.link.label)}</Button>}
               </div>
             </div>
@@ -1189,6 +1208,7 @@ export default function AgentPage() {
             </div>
           )}
           <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { void attachImage(e.target.files?.[0]); e.target.value = '' }} />
+          <AgentCreditsBar state={credits} onOpen={() => setCreditsOpen(true)} />
           <div className="mk-field-shell flex items-center gap-2 rounded-xl border border-white/[0.08] bg-black/25 p-1.5 transition">
             <input value={input} onChange={(e) => setInput(e.target.value)} onPaste={(e) => { const item = Array.from(e.clipboardData.items).find((entry) => entry.type.startsWith('image/')); if (item) { e.preventDefault(); void attachImage(item.getAsFile()) } }} placeholder={tr(SAMPLE_PROMPTS.send)} aria-label={tr('Message Makoto')} className="flex-1 min-w-0 bg-transparent px-2.5 py-2 text-[14px] outline-none placeholder:text-[#6f6d7a]" />
             {!typing && <button type="button" onClick={() => fileRef.current?.click()} aria-label={lang === 'vi' ? 'Gửi ảnh chụp màn hình' : 'Attach a screenshot'} title={lang === 'vi' ? 'Gửi ảnh biểu đồ hoặc giao dịch' : 'Attach a chart or transaction screenshot'} className={`h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg ${T.sub} hover:text-white hover:bg-white/[0.06]`}><ImagePlus size={16} /></button>}
@@ -1207,6 +1227,7 @@ export default function AgentPage() {
           )}
         </form>
       </Card>
+      <AgentCreditsPanel state={credits} onState={setCredits} open={creditsOpen} onClose={() => setCreditsOpen(false)} />
       <aside className="hidden lg:block sticky top-[76px]"><ContextPanel flow={current} actions={msgs.length ? agentActions : []} onAction={runAction} memoryNotes={memory.notes} onRemoveNote={(id) => updateMemory((current) => removeNote(current, id))} /></aside>
     </div>
   )

@@ -52,7 +52,11 @@ test('agent chat sends bounded untrusted context to the configured provider', as
           }),
         })
         assert.equal(response.status, 200)
-        assert.deepEqual(await response.json(), { text: 'Hello from the provider.', source: 'REAL_PROVIDER' })
+        const reply = await response.json()
+        assert.equal(reply.text, 'Hello from the provider.')
+        assert.equal(reply.source, 'REAL_PROVIDER')
+        // Billing rides along with every real answer.
+        assert.equal(typeof reply.credits?.freeLeft, 'number')
       })
     } finally { global.fetch = previous }
   })

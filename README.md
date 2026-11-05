@@ -90,6 +90,23 @@ flowchart LR
 
 Forgetting the password **and** losing the recovery phrase means the wallet cannot be recovered. That is by design: nobody, including Makoto, can recover it for you.
 
+## Agent credits
+
+The Agent's AI answers are paid for in USDC on Arc. Reading your own wallet stays free.
+
+| What | Value |
+| --- | --- |
+| Free AI answers | 5 per wallet per day (UTC) |
+| After that | 3 credits per answer |
+| Top-ups | 1 USDC → 100 credits · 5 → 550 · 10 → 1,200 · 25 → 3,250 |
+| Fee address | `0x16299b74c616994eaecb9b20e37d369d5d62586b` |
+
+A top-up is a plain USDC transfer from your own wallet; the server reads the transaction
+back from Arc (sender, recipient, amount, success) before adding credits, and each
+transaction can only be credited once. Spending credits needs a one-time wallet signature,
+so an address typed into the page can never spend someone else's balance. Failed answers
+cost nothing, credits never expire, and `AGENT_FEE_ENABLED=false` turns the whole thing off.
+
 ## Contracts (Arc Testnet)
 
 | Contract | Address |
