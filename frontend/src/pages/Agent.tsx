@@ -27,8 +27,9 @@ import { addNote, contactInText, contactSaveCheck, loadAgentMemory, memoryForReq
 import { describeStep, planStatuses, planStepsFromText, stepCommand, type PlanStep } from '../lib/agentPlan'
 import { AreaChart } from '../components/wallet/charts'
 import { AgentMarkdown } from '../components/AgentMarkdown'
-import { AgentCreditsBar, AgentCreditsPanel } from '../components/AgentCredits'
-import { parseCreditState, readCredits, type CreditState } from '../lib/credits'
+import { AgentCreditsBar, AgentCreditsPanel, AgentCreditsPill } from '../components/AgentCredits'
+import { parseCreditState, readCredits } from '../lib/credits'
+import { useCredits } from '../lib/useCredits'
 import { buildAgentActions, hasPendingStrategy, type AgentAction, type AgentActionIcon } from '../lib/agentActions'
 import { appendChatHistory, isWalletContextFollowUp } from '../agent/chatContext'
 import { formatCurrentDateTime, getCurrentDateTime, type CurrentDateTime } from '../agent/time'
@@ -530,14 +531,9 @@ export default function AgentPage() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [typing, setTyping] = useState(false)
-  const [credits, setCredits] = useState<CreditState | undefined>(undefined)
+  // Shared with the header pill and the sidebar (see lib/useCredits).
+  const [credits, setCredits] = useCredits()
   const [creditsOpen, setCreditsOpen] = useState(false)
-  // Refresh whenever the paying wallet or its verification changes.
-  useEffect(() => {
-    let alive = true
-    void readCredits().then((next) => { if (alive) setCredits(next) })
-    return () => { alive = false }
-  }, [w.address, w.taskAuthenticated])
   const end = useRef<HTMLDivElement>(null)
   const chatHistory = useRef<ChatHistoryItem[]>([])
   const current = [...msgs].reverse().find((m) => m.flow)?.flow
@@ -1066,7 +1062,10 @@ export default function AgentPage() {
               <div className={`text-[12px] flex items-center gap-1.5 ${T.mute}`}><span className="w-2 h-2 rounded-full bg-neon-400/70 shrink-0" /> {tr('Your wallet assistant')}</div>
             </div>
           </div>
-          {msgs.length > 0 && <Button variant="ghost" size="sm" onClick={() => { stop(); setMsgs([]); setSavedChat([]); chatHistory.current = []; try { localStorage.removeItem(chatKey) } catch { /* ignore */ } }}><Trash2 size={13} /> {tr('Clear')}</Button>}
+          <div className="flex items-center gap-2 shrink-0">
+            <AgentCreditsPill state={credits} onOpen={() => setCreditsOpen(true)} />
+            {msgs.length > 0 && <Button variant="ghost" size="sm" onClick={() => { stop(); setMsgs([]); setSavedChat([]); chatHistory.current = []; try { localStorage.removeItem(chatKey) } catch { /* ignore */ } }}><Trash2 size={13} /> {tr('Clear')}</Button>}
+          </div>
         </div>
         {current && <div className="lg:hidden px-4 py-2.5 border-b border-white/[0.05]"><Stepper stage={current.stage} compact /></div>}
 

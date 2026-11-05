@@ -153,7 +153,7 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
                   <div className="font-semibold">{tr('Review before signing')}</div>
                   <p>{tr('Send {usdc} USDC on Arc to Makoto. Your wallet pays about {fee} USDC in network fees.')
                     .replace('{usdc}', phase.pack.usdc).replace('{fee}', phase.tx.feeUsdc.toFixed(6))}</p>
-                  <p className={`text-[11.5px] font-mono ${T.mute}`} title={feeAddress}>{tr('To')} {feeAddress.slice(0, 6)}…{feeAddress.slice(-4)}</p>
+                  {feeAddress && <p className={`text-[11.5px] font-mono ${T.mute}`} title={feeAddress}>{tr('To')} {feeAddress.slice(0, 6)}…{feeAddress.slice(-4)}</p>}
                   <div className="flex gap-2">
                     <Button size="sm" variant="primary" onClick={() => void confirm(phase.pack, phase.tx)}>{tr('Confirm in wallet')}</Button>
                     <Button size="sm" onClick={() => setPhase({ kind: 'idle' })}>{tr('Cancel')}</Button>
@@ -179,10 +179,40 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
   )
 }
 
-/** Small line above the chat box: what is left and how to add more. */
-export function AgentCreditsBar({ state, onOpen }: { state: CreditState | undefined; onOpen: () => void }) {
+/**
+ * Always-visible badge in the Agent panel header: free messages left today and the
+ * credit balance. Tapping it opens the top-up panel.
+ */
+export function AgentCreditsPill({ state, onOpen }: { state: CreditState | undefined; onOpen: () => void }) {
   const [tr] = useT()
   if (!state?.enabled) return null
+  const free = state.freeLeft
+  const credits = state.balance
+  const empty = free <= 0 && credits < state.costPerMessage
+  const label = free > 0
+    ? tr('{n} free today').replace('{n}', String(free))
+    : tr('{n} credits').replace('{n}', credits.toLocaleString('en-US'))
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-agent-credits
+      title={tr('Add credits')}
+      aria-label={`${tr('Agent credits')}: ${label}`}
+      className={`inline-flex items-center gap-1.5 h-8 shrink-0 rounded-full border px-2.5 text-[12px] font-medium transition ${empty ? 'border-amber-300/40 bg-amber-300/[0.08] text-amber-200 hover:bg-amber-300/[0.14]' : 'border-white/[0.12] bg-white/[0.04] hover:border-neon-400/50 hover:bg-white/[0.08]'}`}
+    >
+      <Sparkles size={12} className={empty ? 'text-amber-300' : 'text-neon-300'} />
+      <span className="tabular-nums whitespace-nowrap">{label}</span>
+      <span className="hidden sm:inline opacity-25">·</span>
+      <span className="hidden sm:inline tabular-nums whitespace-nowrap">{credits.toLocaleString('en-US')} {tr('credits')}</span>
+    </button>
+  )
+}
+
+/** Small line above the chat box: only once the free allowance is used up. */
+export function AgentCreditsBar({ state, onOpen }: { state: CreditState | undefined; onOpen: () => void }) {
+  const [tr] = useT()
+  if (!state?.enabled || state.freeLeft > 0) return null
   const free = state.freeLeft
   const credits = state.balance
   const empty = free <= 0 && credits < state.costPerMessage

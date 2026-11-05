@@ -184,6 +184,7 @@ export const AGENT_I18N: Record<string, [string, string, string, string]> = {
   'Free today': ['Miễn phí hôm nay', '今日免费', '本日の無料分', '오늘 무료'],
   'Credits': ['Credit', '额度', 'クレジット', '크레딧'],
   'credits': ['credit', '额度', 'クレジット', '크레딧'],
+  '{n} free today': ['{n} miễn phí hôm nay', '今日 {n} 次免费', '本日 {n} 回無料', '오늘 {n}회 무료'],
   'Each Agent answer that uses the AI costs {n} credits. Free messages reset every day; credits never expire.': ['Mỗi câu trả lời có dùng AI tốn {n} credit. Lượt miễn phí làm mới mỗi ngày; credit không hết hạn.', '每次使用 AI 的回答消耗 {n} 额度。免费次数每天重置，额度不会过期。', 'AI を使う回答は 1 回 {n} クレジットです。無料分は毎日リセットされ、クレジットは失効しません。', 'AI를 사용하는 답변은 {n} 크레딧입니다. 무료 횟수는 매일 초기화되고 크레딧은 만료되지 않습니다.'],
   'Agent credits are turned off right now, so the Agent is free.': ['Hiện Agent đang miễn phí.', '目前 Agent 免费使用。', '現在エージェントは無料です。', '현재 에이전트는 무료입니다.'],
   'Verify your wallet to pay': ['Xác nhận ví để thanh toán', '验证钱包以支付', '支払い前にウォレットを認証', '결제하려면 지갑 인증'],

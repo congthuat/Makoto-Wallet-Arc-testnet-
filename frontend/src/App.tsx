@@ -10,6 +10,7 @@ import { taskItemsForAccount } from './lib/tasks'
 import { useTheme } from './lib/theme'
 import { ARC, ago, fmtAmt, isAddress, short } from './lib/wallet'
 import { useDismissibleOverlay } from './lib/useDismissibleOverlay'
+import { useCredits } from './lib/useCredits'
 import { circularReveal, installCardSpotlight, staggerCards } from './lib/motion'
 import { Avatar, Badge, Button, LiveDot, Logo, LogoLockup, Skeleton, T } from './components/wallet/ui'
 import { ConnectModal, ReceiveModal, TxDetailModal, copyText } from './components/wallet/shared'
@@ -67,6 +68,34 @@ const NAV: { group: string; items: { id: SidebarDestination; icon: any; label: s
   ] },
 ]
 
+/** Agent credits at a glance in the sidebar — always visible, one click from the Agent. */
+function SidebarCredits() {
+  const [tr] = useT()
+  const { go } = useWallet()
+  const [credits] = useCredits()
+  if (!credits?.enabled) return null
+  const free = credits.freeLeft
+  const balance = credits.balance
+  const empty = free <= 0 && balance < credits.costPerMessage
+  return (
+    <button
+      onClick={() => go('agent')}
+      data-sidebar-credits
+      title={tr('Add credits')}
+      className={`w-full text-left rounded-xl border px-3 py-2.5 transition ${empty ? 'border-amber-300/30 bg-amber-300/[0.06] hover:bg-amber-300/[0.1]' : 'border-white/[0.07] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'}`}
+    >
+      <span className={`flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.12em] uppercase ${T.mute}`}>
+        <Sparkles size={12} className={empty ? 'text-amber-300' : 'text-neon-300'} aria-hidden /> {tr('Agent credits')}
+      </span>
+      <span className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-[13px] font-medium">
+        <span className={empty ? 'text-amber-300' : 'text-white'}>{tr('{n} free today').replace('{n}', String(free))}</span>
+        <span className="opacity-25" aria-hidden>·</span>
+        <span className="tabular-nums">{balance.toLocaleString('en-US')} {tr('credits')}</span>
+      </span>
+    </button>
+  )
+}
+
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { page, go, network, networkStatus, retryNetwork, tasks, mode, address, receiveOpen, setReceiveOpen } = useWallet()
   const running = taskItemsForAccount(tasks, mode, address).filter((task) => task.status === 'ACTIVE').length
@@ -96,6 +125,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       ))}
       <div className="mt-auto pt-6 space-y-2">
+        <SidebarCredits />
         <div className={`flex items-center gap-2 px-3 text-[12px] ${T.mute}`}>
           <LiveDot off={networkStatus === 'unavailable' || networkStatus === 'stale'} />
           {networkStatus === 'loading' && (
