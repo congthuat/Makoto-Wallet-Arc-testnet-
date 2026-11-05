@@ -24,6 +24,12 @@ const ERC20_TRANSFER_ABI = [{
 /** USDC on Arc uses 6 decimals for the ERC-20 side. */
 export const USDC_UNITS = 1_000_000n
 
+/**
+ * The ERC-20 USDC contract on Arc. A top-up is a `transfer` call on this contract —
+ * the transaction's `to` is the token, never the fee address (that never moves anything).
+ */
+export const USDC_ADDRESS: Address = '0x3600000000000000000000000000000000000000'
+
 export function usdcUnits(amount: string): bigint | null {
   const text = amount.trim()
   if (!/^(?:0|[1-9]\d{0,5})(?:\.\d{1,6})?$/.test(text)) return null

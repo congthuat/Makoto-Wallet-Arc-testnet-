@@ -6,7 +6,7 @@ import { Button, Card, T } from './wallet/ui'
 import { ConnectModal } from './wallet/shared'
 import { getProvider } from '../lib/wallet'
 import { prepareTx, sendPrepared, type PreparedTx } from '../lib/payRequests'
-import { usdcTransferData, usdcUnits, verifyTopUp, type CreditPack, type CreditState } from '../lib/credits'
+import { USDC_ADDRESS, usdcTransferData, usdcUnits, verifyTopUp, type CreditPack, type CreditState } from '../lib/credits'
 import type { Address } from 'viem'
 
 type PayPhase =
@@ -52,7 +52,7 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
     const provider = getProvider()
     if (!provider || w.mode !== 'connected' || !w.address) { setConnectOpen(true); return }
     try {
-      const tx = await prepareTx(provider, w.address as Address, feeAddress as Address, usdcTransferData(feeAddress as Address, units))
+      const tx = await prepareTx(provider, w.address as Address, USDC_ADDRESS, usdcTransferData(feeAddress as Address, units))
       setPhase({ kind: 'review', pack, tx })
     } catch (caught) {
       setPhase({ kind: 'error', message: caught instanceof Error ? caught.message : tr('Could not prepare the payment.') })

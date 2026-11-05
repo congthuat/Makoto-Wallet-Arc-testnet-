@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canAfford, EMPTY_CREDITS, parseCreditState, readCredits, usdcUnits, verifyTopUp, usdcTransferData } from './credits.ts'
+import { canAfford, EMPTY_CREDITS, parseCreditState, readCredits, USDC_ADDRESS, usdcUnits, verifyTopUp, usdcTransferData } from './credits.ts'
 
 test('USDC amounts become 6-decimal units', () => {
   assert.equal(usdcUnits('1'), 1_000_000n)
@@ -18,6 +18,14 @@ test('top-up calldata targets the recipient with the exact amount', () => {
   assert.match(data, /^0xa9059cbb/)
   assert.match(data, /16299b74c616994eaecb9b20e37d369d5d62586b/)
   assert.ok(data.endsWith('4c4b40')) // 5,000,000 in hex
+})
+
+test('a top-up sends the transfer call to the USDC contract, not to the fee address', () => {
+  assert.equal(USDC_ADDRESS, '0x3600000000000000000000000000000000000000')
+  const fee = '0x16299b74c616994eaecb9b20e37d369d5d62586b'
+  assert.notEqual(USDC_ADDRESS.toLowerCase(), fee)
+  // The fee address belongs in the calldata only.
+  assert.match(usdcTransferData(fee, 1_000_000n), new RegExp(fee.slice(2)))
 })
 
 test('server credit state is validated, not trusted', () => {
