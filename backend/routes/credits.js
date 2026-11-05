@@ -10,7 +10,7 @@
 const { Router } = require('express')
 const { rateLimit } = require('express-rate-limit')
 const { ARC_CHAIN_ID, getTaskAuth } = require('../lib/taskAuth')
-const { anonKey, config, feeState, verifyTopUp } = require('../lib/agentFees')
+const { anonKeyFor, config, feeState, verifyTopUp } = require('../lib/agentFees')
 const { getCreditStore } = require('../lib/creditStore')
 
 const VERIFY_CODES = {
@@ -45,7 +45,7 @@ function createCreditsRouter(store = getCreditStore(), settings = config()) {
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
 
   // A visitor without a wallet still sees the free allowance they are actually using.
-  router.get('/', (req, res) => res.json(feeState(sessionAddress(req) || anonKey(req.ip), store, settings)))
+  router.get('/', (req, res) => res.json(feeState(sessionAddress(req) || anonKeyFor(req), store, settings)))
 
   router.post('/verify', limiter, auth.mutationOrigin, async (req, res) => {
     const payer = sessionAddress(req)

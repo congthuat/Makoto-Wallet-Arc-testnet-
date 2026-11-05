@@ -3,7 +3,7 @@ const { Router } = express
 const { rateLimit } = require('express-rate-limit')
 const { generateAgentResponse, validLocale, safeImage } = require('../lib/llm')
 const { ARC_CHAIN_ID, getTaskAuth } = require('../lib/taskAuth')
-const { anonKey, canChat, chargeMessage, config: feeConfig, feeState, normaliseAddress } = require('../lib/agentFees')
+const { anonKeyFor, canChat, chargeMessage, config: feeConfig, feeState, normaliseAddress } = require('../lib/agentFees')
 const { getCreditStore } = require('../lib/creditStore')
 
 const router = Router()
@@ -19,7 +19,7 @@ function billingFor(req, body) {
   const verified = typeof address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(address) && req.session.chainId === ARC_CHAIN_ID ? address : null
   const settings = feeConfig()
   // A visitor with no wallet still gets the free daily allowance, counted per IP.
-  const payer = verified || normaliseAddress(body?.address) || (settings.enabled ? anonKey(req.ip) : null)
+  const payer = verified || normaliseAddress(body?.address) || (settings.enabled ? anonKeyFor(req) : null)
   return { payer, allowCredits: Boolean(verified), settings, store: getCreditStore() }
 }
 

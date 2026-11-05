@@ -189,9 +189,20 @@ function anonKey(ip) {
   return `anon:${crypto.createHash('sha256').update(String(ip || 'unknown')).digest('hex').slice(0, 32)}`
 }
 
+/**
+ * Free-tier key for a request without a wallet. Behind nginx every request shares the
+ * proxy address, so the forwarded client address is preferred. Spoofing it can only win a
+ * few extra *free* messages — paid credits are bound to a signed-in wallet, never to this.
+ */
+function anonKeyFor(req) {
+  const forwarded = typeof req?.headers?.['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'].split(',')[0].trim() : ''
+  return anonKey(forwarded || req?.ip)
+}
+
 module.exports = {
   ARC_CHAIN_ID,
   anonKey,
+  anonKeyFor,
   DEFAULT_FEE_ADDRESS,
   MIN_TOP_UP_UNITS,
   PACKS,
