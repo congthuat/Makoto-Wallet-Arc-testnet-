@@ -123,16 +123,17 @@ async function verifyTopUp({ txHash, payer, store = getCreditStore(), settings =
   if (Number(receipt.status) !== 1) return { ok: false, code: 'FAILED' }
 
   const sender = String(receipt.from || '').toLowerCase()
-  if (sender !== from) return { ok: false, code: 'WRONG_SENDER' }
-
+  // The USDC Transfer log (from == the signed-in wallet) is what proves the payment.
+  // A smart-contract wallet pays through a bundler, so receipt.from can differ from the
+  // wallet that owns the USDC — do not reject on that alone.
   let units = usdcUnitsFromLogs(receipt, from, settings.feeAddress)
   // Also accept a plain native-USDC transfer to the fee address (18 decimals on Arc).
   const tx = await rpc().getTransaction(hash).catch(() => null)
-  if (tx && String(tx.to || '').toLowerCase() === settings.feeAddress.toLowerCase()) {
+  if (tx && String(tx.to || '').toLowerCase() === settings.feeAddress.toLowerCase() && String(tx.from || '').toLowerCase() === from) {
     const native = BigInt(tx.value || 0n)
     if (native > 0n) units += native / 1_000_000_000_000n
   }
-  if (units <= 0n) return { ok: false, code: 'WRONG_RECIPIENT' }
+  if (units <= 0n) return { ok: false, code: sender === from ? 'WRONG_RECIPIENT' : 'WRONG_SENDER' }
   if (units < MIN_TOP_UP_UNITS) return { ok: false, code: 'TOO_SMALL', minimum: Number(MIN_TOP_UP_UNITS) / 1e6 }
 
   const credits = creditsFor(units)

@@ -3,7 +3,7 @@ const { Router } = express
 const { rateLimit } = require('express-rate-limit')
 const { generateAgentResponse, validLocale, safeImage } = require('../lib/llm')
 const { ARC_CHAIN_ID, getTaskAuth } = require('../lib/taskAuth')
-const { anonKeyFor, canChat, chargeMessage, config: feeConfig, feeState, normaliseAddress } = require('../lib/agentFees')
+const { anonKeyFor, canChat, chargeMessage, config: feeConfig, feeState } = require('../lib/agentFees')
 const { getCreditStore } = require('../lib/creditStore')
 
 const router = Router()
@@ -14,12 +14,14 @@ const isAddress = (value) => typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.
  * Who pays for this message. A signed-in wallet is authoritative; otherwise the connected
  * wallet address sent by the app is trusted only for the free daily allowance.
  */
-function billingFor(req, body) {
+function billingFor(req) {
   const address = req.session?.address
   const verified = typeof address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(address) && req.session.chainId === ARC_CHAIN_ID ? address : null
   const settings = feeConfig()
   // A visitor with no wallet still gets the free daily allowance, counted per IP.
-  const payer = verified || normaliseAddress(body?.address) || (settings.enabled ? anonKeyFor(req) : null)
+  // The address a browser sends is never trusted here: otherwise anyone could cycle through
+  // random addresses for unlimited free answers, or burn another wallet's daily allowance.
+  const payer = verified || (settings.enabled ? anonKeyFor(req) : null)
   return { payer, allowCredits: Boolean(verified), settings, store: getCreditStore() }
 }
 
@@ -100,7 +102,7 @@ router.get('/eval', (_req, res) => {
 router.post('/chat', chatLimiter, imageBody, async (req, res) => {
   const parsed = parseRequest(req.body)
   if (parsed.error) return res.status(400).json({ error: parsed.error })
-  const billing = billingFor(req, parsed.value)
+  const billing = billingFor(req)
   if (!canChat(billing.payer, billing)) return creditsRequired(res, billing.payer)
   let result
   try { result = await generateAgentResponse(parsed.value) }
@@ -120,7 +122,7 @@ router.post('/chat', chatLimiter, imageBody, async (req, res) => {
 router.post('/chat/stream', chatLimiter, imageBody, async (req, res) => {
   const parsed = parseRequest(req.body)
   if (parsed.error) return res.status(400).json({ error: parsed.error })
-  const billing = billingFor(req, parsed.value)
+  const billing = billingFor(req)
   if (!canChat(billing.payer, billing)) return creditsRequired(res, billing.payer)
   const controller = new AbortController()
   res.on('close', () => { if (!res.writableEnded) controller.abort() })
