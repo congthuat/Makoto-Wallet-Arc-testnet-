@@ -56,7 +56,11 @@ function configuredFeeAddress() {
 /** Wallets that never pay (for example the owner's own wallet while testing). */
 function freeAddresses() {
   const raw = process.env.AGENT_FEE_FREE_ADDRESSES || ''
-  return new Set(raw.split(',').map((item) => normaliseAddress(item.trim())).filter(Boolean))
+  const wallets = new Set(raw.split(',').map((item) => normaliseAddress(item.trim())).filter(Boolean))
+  // Paying yourself makes no sense: whoever holds the fee wallet chats for free.
+  const owner = normaliseAddress(process.env.AGENT_FEE_ADDRESS || DEFAULT_FEE_ADDRESS)
+  if (owner) wallets.add(owner)
+  return wallets
 }
 
 function config() {

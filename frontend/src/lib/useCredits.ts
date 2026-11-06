@@ -64,6 +64,30 @@ export function useCreditBump(balance: number) {
   return bump
 }
 
+/* The top-up panel is global: any surface (the Agent page, the sidebar, the floating
+   chat) can open the same panel, and it already knows the credits here. */
+let panelOpen = false
+const panelListeners = new Set<(open: boolean) => void>()
+
+export function showCreditsPanel() {
+  panelOpen = true
+  for (const listener of panelListeners) listener(true)
+}
+
+export function hideCreditsPanel() {
+  panelOpen = false
+  for (const listener of panelListeners) listener(false)
+}
+
+export function useCreditsPanel() {
+  const [open, setOpen] = useState(panelOpen)
+  useEffect(() => {
+    panelListeners.add(setOpen)
+    return () => { panelListeners.delete(setOpen) }
+  }, [])
+  return { open, show: showCreditsPanel, hide: hideCreditsPanel }
+}
+
 /** Force a fresh read (after a spend, a top-up or a 402 from the Agent). */
 export function refreshCredits() {
   void readCredits().then((next) => {

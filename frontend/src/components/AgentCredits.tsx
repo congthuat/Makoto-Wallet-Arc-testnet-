@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { CircleDollarSign, Loader2, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { useT } from '../lib/i18n'
 import { useWallet } from '../lib/store'
 import { Button, Card, T } from './wallet/ui'
 import { ConnectModal } from './wallet/shared'
 import { getProvider } from '../lib/wallet'
-import { prepareTx, sendPrepared, type PreparedTx } from '../lib/payRequests'
+import { prepareTx, readTokenUnits, sendPrepared, type PreparedTx } from '../lib/payRequests'
 import { SuccessBurst } from './wallet/SuccessBurst'
 import { useCreditBump } from '../lib/useCredits'
 import { USDC_ADDRESS, usdcTransferData, usdcUnits, verifyTopUp, type CreditPack, type CreditState } from '../lib/credits'
@@ -33,11 +33,33 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
   const [connectOpen, setConnectOpen] = useState(false)
   const [verifyPending, setVerifyPending] = useState(false)
 
+  const [walletUnits, setWalletUnits] = useState<bigint | null>(null)
+  const [recoverOpen, setRecoverOpen] = useState(false)
+  const [recoverHash, setRecoverHash] = useState('')
+  const [recoverBusy, setRecoverBusy] = useState(false)
+  const [recoverNote, setRecoverNote] = useState('')
+
   const closeTimer = useRef<number | null>(null)
   useEffect(() => {
     if (closeTimer.current) { window.clearTimeout(closeTimer.current); closeTimer.current = null }
-    if (!open) { setPhase({ kind: 'idle' }); setVerifyPending(false) }
+    if (!open) {
+      setPhase({ kind: 'idle' })
+      setVerifyPending(false)
+      setRecoverOpen(false)
+      setRecoverHash('')
+      setRecoverNote('')
+    }
   }, [open])
+
+  // How much USDC the connected wallet actually holds, so a hopeless top-up is caught early.
+  useEffect(() => {
+    if (!open || w.mode !== 'connected' || !w.address) { setWalletUnits(null); return }
+    let alive = true
+    void readTokenUnits('USDC', w.address as Address)
+      .then((units) => { if (alive) setWalletUnits(units) })
+      .catch(() => { if (alive) setWalletUnits(null) })
+    return () => { alive = false }
+  }, [open, w.mode, w.address])
 
   const enabled = state?.enabled === true
   const packs = state?.packs ?? []
@@ -65,6 +87,32 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
     }
   }
 
+  /** Same ending for a fresh payment and for a recovered one: burst, then hand the chat back. */
+  const celebrate = (credits: number, nextBalance: number, nextFree: number) => {
+    setPhase({ kind: 'done', credits, balance: nextBalance })
+    onState({ ...(state ?? { enabled: true, freeLeft: 0, balance: 0, costPerMessage: cost, packs: [] }), balance: nextBalance, freeLeft: nextFree })
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([14, 60, 14])
+    // Let the celebration land, then hand the chat back.
+    if (closeTimer.current) window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(() => { closeTimer.current = null; onClose() }, 2_800)
+  }
+
+  /** A payment sent earlier (tab closed, wallet app switched): check the hash and credit it. */
+  const submitHash = async (event?: FormEvent) => {
+    event?.preventDefault()
+    if (recoverBusy) return
+    const hash = recoverHash.trim()
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) { setRecoverNote(tr('Paste the full transaction hash — it starts with 0x and is 66 characters long.')); return }
+    setRecoverBusy(true)
+    setRecoverNote('')
+    const result = await verifyTopUp(hash)
+    setRecoverBusy(false)
+    if (result.ok) { celebrate(result.credits, result.balance, result.freeLeft); return }
+    if (result.code === 'ALREADY_CREDITED') { setRecoverNote(tr('That transaction has already been added to your balance.')); return }
+    if (result.code === 'PENDING' || result.code === 'RPC_UNAVAILABLE' || result.code === 'CREDITS_UNAVAILABLE') { setRecoverNote(tr('That transaction is still confirming on Arc. Try again in a few seconds.')); return }
+    setRecoverNote(result.error)
+  }
+
   const confirm = async (pack: CreditPack, tx: PreparedTx) => {
     const provider = getProvider()
     if (!provider) { setPhase({ kind: 'error', message: tr('Wallet provider unavailable.') }); return }
@@ -77,16 +125,9 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
     for (let attempt = 0; attempt < 40; attempt += 1) {
       await sleep(attempt === 0 ? 2_500 : 3_000)
       const result = await verifyTopUp(hash)
-      if (result.ok) {
-        setPhase({ kind: 'done', credits: result.credits, balance: result.balance })
-        onState({ ...(state ?? { enabled: true, freeLeft: 0, balance: 0, costPerMessage: cost, packs: [] }), balance: result.balance, freeLeft: result.freeLeft })
-        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([14, 60, 14])
-        // Let the celebration land, then hand the chat back.
-        closeTimer.current = window.setTimeout(() => { closeTimer.current = null; onClose() }, 2_800)
-        return
-      }
+      if (result.ok) { celebrate(result.credits, result.balance, result.freeLeft); return }
       if (result.code === 'PENDING' || result.code === 'RPC_UNAVAILABLE' || result.code === 'CREDITS_UNAVAILABLE') continue
-      if (result.code === 'ALREADY_CREDITED') { setPhase({ kind: 'idle' }); return }
+      if (result.code === 'ALREADY_CREDITED') { setPhase({ kind: 'error', message: tr('That transaction has already been added to your balance.') }); return }
       setPhase({ kind: 'error', message: result.error })
       return
     }
@@ -141,6 +182,11 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
 
               <div className={`space-y-2 ${phase.kind === 'done' ? 'hidden' : ''}`}>
                 <div className={`text-[12px] font-semibold tracking-[0.06em] uppercase ${T.mute}`}>{tr('Choose a top-up')}</div>
+                {walletUnits !== null && Number(walletUnits) / 1e6 < 1 && (
+                  <p className="rounded-lg border border-amber-300/25 bg-amber-300/[0.05] px-2.5 py-2 text-[12px] text-amber-200">
+                    {tr('Your wallet holds {n} USDC on Arc — add a little more before topping up.').replace('{n}', (Number(walletUnits) / 1e6).toFixed(2))}
+                  </p>
+                )}
                 {packs.map((pack) => (
                   <button
                     key={pack.usdc}
@@ -151,7 +197,10 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
                     data-credit-pack={pack.usdc}
                   >
                     <span className="flex items-center gap-2 text-[13.5px] font-semibold"><CircleDollarSign size={15} className="text-neon-300" /> {pack.usdc} USDC</span>
-                    <span className="text-[12.5px] tabular-nums">{pack.credits.toLocaleString('en-US')} {tr('credits')}</span>
+                    <span className="text-right">
+                      <span className="block text-[12.5px] tabular-nums">{pack.credits.toLocaleString('en-US')} {tr('credits')}</span>
+                      <span className={`block text-[11px] tabular-nums ${T.mute}`}>{tr('≈ {n} answers').replace('{n}', String(Math.max(1, Math.floor(pack.credits / Math.max(1, cost)))))}</span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -179,6 +228,34 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
                 </div>
               )}
               {phase.kind === 'error' && <p role="alert" className="rounded-xl border border-rose-400/25 bg-rose-500/[0.05] p-3 text-[12.5px] text-rose-200">{phase.message}</p>}
+
+              {phase.kind !== 'done' && w.mode === 'connected' && w.taskAuthenticated && (
+                <div className="border-t border-white/[0.06] pt-3" data-credit-recover>
+                  {!recoverOpen ? (
+                    <button type="button" onClick={() => setRecoverOpen(true)} className={`text-[12px] underline underline-offset-2 ${T.mute} hover:text-white`}>
+                      {tr('Already paid but no credits? Check the transaction')}
+                    </button>
+                  ) : (
+                    <form onSubmit={(e) => void submitHash(e)} className="space-y-2">
+                      <label className={`block text-[12px] ${T.sub}`} htmlFor="credit-tx">{tr('Paste the transaction hash from your wallet')}</label>
+                      <input
+                        id="credit-tx"
+                        value={recoverHash}
+                        onChange={(e) => setRecoverHash(e.target.value)}
+                        placeholder="0x…"
+                        spellCheck={false}
+                        autoComplete="off"
+                        className="w-full rounded-lg border border-white/[0.1] bg-black/25 px-2.5 py-2 text-[12.5px] font-mono outline-none focus:border-neon-400/60"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button type="submit" size="sm" variant="primary" disabled={recoverBusy}>{recoverBusy ? '…' : tr('Check payment')}</Button>
+                        <Button type="button" size="sm" onClick={() => { setRecoverOpen(false); setRecoverNote('') }}>{tr('Cancel')}</Button>
+                      </div>
+                      {recoverNote && <p role="alert" className="text-[12px] text-amber-200">{recoverNote}</p>}
+                    </form>
+                  )}
+                </div>
+              )}
 
             </>
           )}

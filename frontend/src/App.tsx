@@ -10,10 +10,11 @@ import { taskItemsForAccount } from './lib/tasks'
 import { useTheme } from './lib/theme'
 import { ARC, ago, fmtAmt, isAddress, short } from './lib/wallet'
 import { useDismissibleOverlay } from './lib/useDismissibleOverlay'
-import { useCreditBump, useCredits } from './lib/useCredits'
+import { useCreditBump, useCredits, useCreditsPanel } from './lib/useCredits'
 import { circularReveal, installCardSpotlight, staggerCards } from './lib/motion'
 import { Avatar, Badge, Button, LiveDot, Logo, LogoLockup, Skeleton, T } from './components/wallet/ui'
 import { ConnectModal, ReceiveModal, TxDetailModal, copyText } from './components/wallet/shared'
+import { AgentCreditsPanel } from './components/AgentCredits'
 import { FeedbackLink } from './components/wallet/FeedbackLink'
 import HomePage from './pages/Home'
 import { COMMUNITY } from './lib/community'
@@ -428,6 +429,8 @@ function LockScreen({ onClose }: { onClose: () => void }) {
 function Shell() {
   const [tr] = useT()
   const w = useWallet()
+  const [credits, setCredits] = useCredits()
+  const creditsPanel = useCreditsPanel()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   const [connectOpen, setConnectOpen] = useState(false)
@@ -512,6 +515,7 @@ function Shell() {
       <ConnectModal open={connectOpen} onClose={() => setConnectOpen(false)} />
       <CommandPalette onConnect={openConnect} />
       <FloatingAgent />
+      <AgentCreditsPanel state={credits} onState={setCredits} open={creditsPanel.open} onClose={creditsPanel.hide} />
       <ReceiveModal />
       <TxDetailModal />
       <EmbeddedApproval />

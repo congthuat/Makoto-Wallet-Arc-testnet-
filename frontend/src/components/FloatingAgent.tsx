@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { ArrowUp, Maximize2, Square, X } from 'lucide-react'
 import { useWallet } from '../lib/store'
+import { showCreditsPanel } from '../lib/useCredits'
 import { useT } from '../lib/i18n'
 import { ARC } from '../lib/wallet'
 import { Orb, T } from './wallet/ui'
@@ -165,6 +166,8 @@ export default function FloatingAgent() {
         update({ text: visibleStreamText(streamed) || (vi ? 'Đã dừng.' : 'Stopped.'), streaming: false, status: undefined })
       } else if (response.code === 'AGENT_CREDITS_REQUIRED') {
         update({ text: tr('Your free Agent messages for today are used up. Add credits to keep going.'), streaming: false, status: undefined })
+        // Open the top-up panel right here instead of sending the user hunting for it.
+        showCreditsPanel()
       } else {
         update({ text: vi ? 'Agent đang bận, bạn thử lại sau ít phút nhé.' : 'The Agent is busy. Please try again in a few minutes.', streaming: false, status: undefined })
       }

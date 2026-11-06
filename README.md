@@ -107,6 +107,12 @@ transaction can only be credited once. Spending credits needs a one-time wallet 
 so an address typed into the page can never spend someone else's balance. Failed answers
 cost nothing, credits never expire, and `AGENT_FEE_ENABLED=false` turns the whole thing off.
 
+If a payment lands but the tab closed first, the payer can paste the transaction hash back
+into the credits panel and the same on-chain check credits it. The wallet that holds the fee
+address never pays (`AGENT_FEE_FREE_ADDRESSES` adds more free wallets), and the free daily
+allowance is counted per client address for anyone who has not signed in, so cycling wallet
+addresses cannot farm free answers.
+
 ## Contracts (Arc Testnet)
 
 | Contract | Address |
