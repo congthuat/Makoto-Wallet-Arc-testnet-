@@ -192,6 +192,8 @@ export const AGENT_I18N: Record<string, [string, string, string, string]> = {
   'Wallet verification is unavailable right now.': ['Hiện chưa xác minh được ví.', '暂时无法验证钱包。', '現在ウォレットを認証できません。', '현재 지갑 인증을 사용할 수 없습니다.'],
   'Choose a top-up': ['Chọn gói nạp', '选择充值套餐', 'チャージを選択', '충전 선택'],
   'Credits added: {n}': ['Đã cộng {n} credit', '已添加 {n} 额度', '{n} クレジットを追加しました', '{n} 크레딧이 추가되었습니다'],
+  'Credits added': ['Đã cộng credit', '额度已添加', 'クレジットを追加しました', '크레딧이 추가되었습니다'],
+  'New balance: {n} credits': ['Số dư mới: {n} credit', '新余额：{n} 额度', '新しい残高：{n} クレジット', '새 잔액: {n} 크레딧'],
   'Could not prepare the payment.': ['Chưa chuẩn bị được thanh toán.', '无法准备付款。', '支払いを準備できませんでした。', '결제를 준비하지 못했습니다.'],
   'Wallet provider unavailable.': ['Không kết nối được ví.', '钱包不可用。', 'ウォレットに接続できません。', '지갑을 사용할 수 없습니다.'],
   'The payment was not sent.': ['Thanh toán chưa được gửi.', '付款未发送。', '支払いは送信されませんでした。', '결제가 전송되지 않았습니다.'],

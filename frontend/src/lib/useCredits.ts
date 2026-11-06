@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { readCredits, type CreditState } from './credits'
 import { useWallet } from './store'
 
@@ -44,6 +44,24 @@ export function useCredits(): [CreditState | undefined, (next: CreditState) => v
   }, [key])
 
   return [state, publishCredits]
+}
+
+/**
+ * True for a moment right after the balance goes up, so the badge can pop.
+ * Used by the header pill and the sidebar card.
+ */
+export function useCreditBump(balance: number) {
+  const [bump, setBump] = useState(false)
+  const previous = useRef<number | null>(null)
+  useEffect(() => {
+    const before = previous.current
+    previous.current = balance
+    if (before === null || balance <= before) return
+    setBump(true)
+    const timer = window.setTimeout(() => setBump(false), 1_800)
+    return () => window.clearTimeout(timer)
+  }, [balance])
+  return bump
 }
 
 /** Force a fresh read (after a spend, a top-up or a 402 from the Agent). */

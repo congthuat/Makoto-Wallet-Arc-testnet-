@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CircleDollarSign, Loader2, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { useT } from '../lib/i18n'
 import { useWallet } from '../lib/store'
@@ -6,6 +6,8 @@ import { Button, Card, T } from './wallet/ui'
 import { ConnectModal } from './wallet/shared'
 import { getProvider } from '../lib/wallet'
 import { prepareTx, sendPrepared, type PreparedTx } from '../lib/payRequests'
+import { SuccessBurst } from './wallet/SuccessBurst'
+import { useCreditBump } from '../lib/useCredits'
 import { USDC_ADDRESS, usdcTransferData, usdcUnits, verifyTopUp, type CreditPack, type CreditState } from '../lib/credits'
 import type { Address } from 'viem'
 
@@ -14,7 +16,7 @@ type PayPhase =
   | { kind: 'review'; pack: CreditPack; tx: PreparedTx }
   | { kind: 'wallet' }
   | { kind: 'pending'; pack: CreditPack }
-  | { kind: 'done'; credits: number }
+  | { kind: 'done'; credits: number; balance: number }
   | { kind: 'error'; message: string }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -31,7 +33,11 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
   const [connectOpen, setConnectOpen] = useState(false)
   const [verifyPending, setVerifyPending] = useState(false)
 
-  useEffect(() => { if (!open) { setPhase({ kind: 'idle' }); setVerifyPending(false) } }, [open])
+  const closeTimer = useRef<number | null>(null)
+  useEffect(() => {
+    if (closeTimer.current) { window.clearTimeout(closeTimer.current); closeTimer.current = null }
+    if (!open) { setPhase({ kind: 'idle' }); setVerifyPending(false) }
+  }, [open])
 
   const enabled = state?.enabled === true
   const packs = state?.packs ?? []
@@ -72,9 +78,11 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
       await sleep(attempt === 0 ? 2_500 : 3_000)
       const result = await verifyTopUp(hash)
       if (result.ok) {
-        setPhase({ kind: 'done', credits: result.credits })
+        setPhase({ kind: 'done', credits: result.credits, balance: result.balance })
         onState({ ...(state ?? { enabled: true, freeLeft: 0, balance: 0, costPerMessage: cost, packs: [] }), balance: result.balance, freeLeft: result.freeLeft })
-        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(12)
+        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([14, 60, 14])
+        // Let the celebration land, then hand the chat back.
+        closeTimer.current = window.setTimeout(() => { closeTimer.current = null; onClose() }, 2_800)
         return
       }
       if (result.code === 'PENDING' || result.code === 'RPC_UNAVAILABLE' || result.code === 'CREDITS_UNAVAILABLE') continue
@@ -110,7 +118,7 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
               <div className="mt-0.5 text-[20px] font-bold tabular-nums">{balance}</div>
             </div>
           </div>
-          <p className={`text-[12.5px] ${T.sub}`}>
+          <p className={`text-[12.5px] ${T.sub} ${phase.kind === 'done' ? 'hidden' : ''}`}>
             {tr('Each Agent answer that uses the AI costs {n} credits. Free messages reset every day; credits never expire.')
               .replace('{n}', String(cost))}
           </p>
@@ -131,7 +139,7 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
                 </Card>
               )}
 
-              <div className="space-y-2">
+              <div className={`space-y-2 ${phase.kind === 'done' ? 'hidden' : ''}`}>
                 <div className={`text-[12px] font-semibold tracking-[0.06em] uppercase ${T.mute}`}>{tr('Choose a top-up')}</div>
                 {packs.map((pack) => (
                   <button
@@ -164,8 +172,10 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
                 <p className="flex items-center gap-2 text-[13px]"><Loader2 size={15} className="animate-spin" /> {phase.kind === 'wallet' ? tr('Waiting for your wallet…') : tr('Waiting for the payment to confirm on Arc…')}</p>
               )}
               {phase.kind === 'done' && (
-                <div className="rounded-xl border border-neon-500/30 bg-neon-500/[0.06] p-3 text-[13px] text-neon-200">
-                  {tr('Credits added: {n}').replace('{n}', phase.credits.toLocaleString('en-US'))}
+                <div className="rounded-2xl border border-neon-500/30 bg-neon-500/[0.07] px-4 py-5 text-center" data-credits-done>
+                  <SuccessBurst size={58} label={tr('Credits added')} />
+                  <p className="mt-4 text-[20px] font-bold text-neon-200 tabular-nums mk-pop">+{phase.credits.toLocaleString('en-US')} {tr('credits')}</p>
+                  <p className="mt-1 text-[12.5px] text-neon-100/75">{tr('New balance: {n} credits').replace('{n}', phase.balance.toLocaleString('en-US'))}</p>
                 </div>
               )}
               {phase.kind === 'error' && <p role="alert" className="rounded-xl border border-rose-400/25 bg-rose-500/[0.05] p-3 text-[12.5px] text-rose-200">{phase.message}</p>}
@@ -185,6 +195,7 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
  */
 export function AgentCreditsPill({ state, onOpen }: { state: CreditState | undefined; onOpen: () => void }) {
   const [tr] = useT()
+  const bump = useCreditBump(state?.balance ?? 0)
   if (!state?.enabled) return null
   const free = state.freeLeft
   const credits = state.balance
@@ -199,7 +210,7 @@ export function AgentCreditsPill({ state, onOpen }: { state: CreditState | undef
       data-agent-credits
       title={tr('Add credits')}
       aria-label={`${tr('Agent credits')}: ${label}`}
-      className={`inline-flex items-center gap-1.5 h-8 shrink-0 rounded-full border px-2.5 text-[12px] font-medium transition ${empty ? 'border-amber-300/40 bg-amber-300/[0.08] text-amber-200 hover:bg-amber-300/[0.14]' : 'border-white/[0.12] bg-white/[0.04] hover:border-neon-400/50 hover:bg-white/[0.08]'}`}
+      className={`inline-flex items-center gap-1.5 h-8 shrink-0 rounded-full border px-2.5 text-[12px] font-medium transition ${bump ? 'mk-credit-glow border-neon-400/70' : ''} ${empty ? 'border-amber-300/40 bg-amber-300/[0.08] text-amber-200 hover:bg-amber-300/[0.14]' : 'border-white/[0.12] bg-white/[0.04] hover:border-neon-400/50 hover:bg-white/[0.08]'}`}
     >
       <Sparkles size={12} className={empty ? 'text-amber-300' : 'text-neon-300'} />
       <span className="tabular-nums whitespace-nowrap">{label}</span>

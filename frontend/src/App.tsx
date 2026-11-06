@@ -10,7 +10,7 @@ import { taskItemsForAccount } from './lib/tasks'
 import { useTheme } from './lib/theme'
 import { ARC, ago, fmtAmt, isAddress, short } from './lib/wallet'
 import { useDismissibleOverlay } from './lib/useDismissibleOverlay'
-import { useCredits } from './lib/useCredits'
+import { useCreditBump, useCredits } from './lib/useCredits'
 import { circularReveal, installCardSpotlight, staggerCards } from './lib/motion'
 import { Avatar, Badge, Button, LiveDot, Logo, LogoLockup, Skeleton, T } from './components/wallet/ui'
 import { ConnectModal, ReceiveModal, TxDetailModal, copyText } from './components/wallet/shared'
@@ -73,6 +73,7 @@ function SidebarCredits() {
   const [tr] = useT()
   const { go } = useWallet()
   const [credits] = useCredits()
+  const bump = useCreditBump(credits?.balance ?? 0)
   if (!credits?.enabled) return null
   const free = credits.freeLeft
   const balance = credits.balance
@@ -82,7 +83,7 @@ function SidebarCredits() {
       onClick={() => go('agent')}
       data-sidebar-credits
       title={tr('Add credits')}
-      className={`w-full text-left rounded-xl border px-3 py-2.5 transition ${empty ? 'border-amber-300/30 bg-amber-300/[0.06] hover:bg-amber-300/[0.1]' : 'border-white/[0.07] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'}`}
+      className={`w-full text-left rounded-xl border px-3 py-2.5 transition ${bump ? 'mk-credit-glow border-neon-400/60' : ''} ${empty ? 'border-amber-300/30 bg-amber-300/[0.06] hover:bg-amber-300/[0.1]' : 'border-white/[0.07] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'}`}
     >
       <span className={`flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.12em] uppercase ${T.mute}`}>
         <Sparkles size={12} className={empty ? 'text-amber-300' : 'text-neon-300'} aria-hidden /> {tr('Agent credits')}
