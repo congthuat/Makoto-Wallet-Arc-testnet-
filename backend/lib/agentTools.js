@@ -367,18 +367,19 @@ const TOOLS = {
   },
   propose_task: {
     source: 'Makoto tasks',
-    description: 'Prepare a background task card the user confirms in one tap: a price alert (BTC, ETH, SOL, USDC, EURC vs a USD threshold), a wallet balance alert (USDC, EURC, cirBTC on Arc), or a daily scheduled report (DAILY_BRIEFING = wallet + market + news morning briefing, PORTFOLIO_SUMMARY, ACTIVITY_SUMMARY, BALANCE_CHECK). Notify-only: it never moves funds. Call when the user asks to be alerted/notified/reminded or wants a daily report, e.g. "báo mình khi BTC dưới 75k", "mỗi sáng 7h gửi bản tin". Compute an exact threshold if the user gives a relative one (e.g. "10% below now" -> read the price first). For daily tasks use 24h HH:MM local time (default 07:00 for "morning").',
+    description: 'Prepare a background task card the user confirms in one tap: a price alert (BTC, ETH, SOL, USDC, EURC vs a USD threshold), a wallet balance alert (USDC, EURC, cirBTC on Arc), or a daily scheduled report (DAILY_BRIEFING = wallet + market + news morning briefing, PORTFOLIO_SUMMARY, ACTIVITY_SUMMARY, BALANCE_CHECK), or a daily reminder (kind "reminder" with the message in "text", e.g. "nhắc tôi uống nước lúc 9h mỗi ngày"). Notify-only: it never moves funds. Call when the user asks to be alerted/notified/reminded or wants a daily report, e.g. "báo mình khi BTC dưới 75k", "mỗi sáng 7h gửi bản tin". Compute an exact threshold if the user gives a relative one (e.g. "10% below now" -> read the price first). For daily tasks use 24h HH:MM local time (default 07:00 for "morning").',
     parameters: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['price_alert', 'balance_alert', 'daily_report'] },
+        kind: { type: 'string', enum: ['price_alert', 'balance_alert', 'daily_report', 'reminder'] },
         asset: { type: ['string', 'null'], enum: ['BTC', 'ETH', 'SOL', 'USDC', 'EURC', 'cirBTC', null], description: 'Asset for alerts, otherwise null.' },
         operator: { type: ['string', 'null'], enum: ['LT', 'LTE', 'GT', 'GTE', null], description: 'LT below, LTE at or below, GT above, GTE at or above. Null for daily_report.' },
         threshold: { type: ['string', 'null'], description: 'Plain decimal number, e.g. "75000" or "0.998". Null for daily_report.' },
         time: { type: ['string', 'null'], description: 'HH:MM 24h local time for daily_report, otherwise null.' },
         action: { type: ['string', 'null'], enum: ['DAILY_BRIEFING', 'PORTFOLIO_SUMMARY', 'ACTIVITY_SUMMARY', 'BALANCE_CHECK', null], description: 'Report type for daily_report, otherwise null.' },
+        text: { type: ['string', 'null'], description: 'For a reminder: the message to show at that time (max 200 characters), otherwise null.' },
       },
-      required: ['kind', 'asset', 'operator', 'threshold', 'time', 'action'],
+      required: ['kind', 'asset', 'operator', 'threshold', 'time', 'action', 'text'],
       additionalProperties: false,
     },
     async run(args, ctx) {
@@ -515,6 +516,14 @@ const TASK_ACTIONS = ['DAILY_BRIEFING', 'PORTFOLIO_SUMMARY', 'ACTIVITY_SUMMARY',
 /** Validates a model-proposed task into { type, condition, schedule }; account/timezone are bound on the device. */
 function validateTaskDraft(args) {
   const kind = args?.kind
+  if (kind === 'reminder') {
+    const time = typeof args.time === 'string' ? args.time.trim() : ''
+    const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(time)
+    if (!match) return { ok: false, reason: 'A reminder needs a time like 09:00.' }
+    const text = typeof args.text === 'string' ? args.text.normalize('NFC').replace(/\s+/g, ' ').trim() : ''
+    if (!text || text.length > 200) return { ok: false, reason: 'A reminder needs a message of 1-200 characters.' }
+    return { ok: true, value: { type: 'SCHEDULED_AUTOMATION', condition: null, schedule: { kind: 'DAILY', time: `${match[1].padStart(2, '0')}:${match[2]}`, action: 'REMINDER', text } } }
+  }
   if (kind === 'daily_report') {
     const time = typeof args.time === 'string' ? args.time.trim() : ''
     const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(time)

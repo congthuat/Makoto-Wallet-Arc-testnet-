@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { CircleDollarSign, Loader2, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { CircleDollarSign, Gift, Loader2, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { useT } from '../lib/i18n'
 import { useWallet } from '../lib/store'
 import { Button, Card, T } from './wallet/ui'
@@ -7,6 +7,7 @@ import { ConnectModal } from './wallet/shared'
 import { getProvider } from '../lib/wallet'
 import { prepareTx, readTokenUnits, sendPrepared, type PreparedTx } from '../lib/payRequests'
 import { SuccessBurst } from './wallet/SuccessBurst'
+import { CreditGiftSheet } from './CreditGifts'
 import { useCreditBump } from '../lib/useCredits'
 import { USDC_ADDRESS, usdcTransferData, usdcUnits, verifyTopUp, type CreditPack, type CreditState } from '../lib/credits'
 import type { Address } from 'viem'
@@ -38,6 +39,7 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
   const [recoverHash, setRecoverHash] = useState('')
   const [recoverBusy, setRecoverBusy] = useState(false)
   const [recoverNote, setRecoverNote] = useState('')
+  const [giftOpen, setGiftOpen] = useState(false)
 
   const closeTimer = useRef<number | null>(null)
   useEffect(() => {
@@ -48,6 +50,7 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
       setRecoverOpen(false)
       setRecoverHash('')
       setRecoverNote('')
+      setGiftOpen(false)
     }
   }, [open])
 
@@ -203,6 +206,17 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
                     </span>
                   </button>
                 ))}
+                <button
+                  type="button"
+                  data-credit-gift-open
+                  disabled={busy || w.mode !== 'connected' || !w.taskAuthenticated || balance < 10 || phase.kind === 'done'}
+                  onClick={() => setGiftOpen(true)}
+                  className={`w-full flex items-center gap-2 rounded-xl border border-dashed p-3 text-left text-[13px] font-medium transition disabled:opacity-45 border-white/[0.12] ${T.sub} hover:border-neon-400/50 hover:text-white`}
+                >
+                  <Gift size={15} className="text-neon-300" />
+                  <span className="flex-1">{tr('Gift credits to a friend')}</span>
+                  <span className="text-[11px] opacity-60">{tr('from {n}').replace('{n}', String(10))}</span>
+                </button>
               </div>
 
               {phase.kind === 'review' && (
@@ -262,6 +276,7 @@ export function AgentCreditsPanel({ state, onState, open, onClose }: { state: Cr
         </div>
       </div>
       <ConnectModal open={connectOpen} onClose={() => setConnectOpen(false)} />
+      <CreditGiftSheet open={giftOpen} onClose={() => setGiftOpen(false)} state={state} onState={onState} />
     </div>
   )
 }

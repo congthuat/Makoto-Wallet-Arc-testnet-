@@ -14,7 +14,9 @@ export type TaskCondition = {
 export type TaskSchedule = {
   kind: 'DAILY'
   time: string
-  action: 'PORTFOLIO_SUMMARY' | 'ACTIVITY_SUMMARY' | 'BALANCE_CHECK' | 'DAILY_BRIEFING'
+  action: 'PORTFOLIO_SUMMARY' | 'ACTIVITY_SUMMARY' | 'BALANCE_CHECK' | 'DAILY_BRIEFING' | 'REMINDER'
+  /** REMINDER only: the message the user wants to see, shown verbatim. */
+  text?: string
 }
 export type TaskCandidate = {
   type: TaskType
@@ -133,6 +135,9 @@ export function taskDefinition(task: Pick<TaskCandidate, 'type' | 'condition' | 
     return `${task.condition.asset} ${sign} ${task.condition.threshold}`
   }
   if (task.type === 'SCHEDULED_AUTOMATION' && task.schedule) {
+    if (task.schedule.action === 'REMINDER') {
+      return `${task.schedule.text || (locale === 'vi' ? 'Nhắc việc' : 'Reminder')} · ${locale === 'vi' ? 'Hằng ngày' : 'Daily'} ${task.schedule.time}`
+    }
     const action = {
       PORTFOLIO_SUMMARY: locale === 'vi' ? 'T\u00f3m t\u1eaft danh m\u1ee5c' : 'Portfolio summary',
       ACTIVITY_SUMMARY: locale === 'vi' ? 'T\u00f3m t\u1eaft ho\u1ea1t \u0111\u1ed9ng' : 'Activity summary',
@@ -148,6 +153,7 @@ export function taskDisplayTitle(task: Pick<TaskCandidate, 'type' | 'condition' 
   if (task.type === 'CONDITION_MONITOR' && task.condition?.metric === 'TOKEN_PRICE') return locale === 'vi' ? `Cảnh báo giá ${task.condition.asset}` : `${task.condition.asset} price alert`
   if (task.type === 'CONDITION_MONITOR' && task.condition) return locale === 'vi' ? `Theo dõi số dư ${task.condition.asset}` : `${task.condition.asset} balance alert`
   if (task.schedule) {
+    if (task.schedule.action === 'REMINDER') return task.schedule.text || task.title
     const titles = {
       PORTFOLIO_SUMMARY: ['Daily portfolio summary', 'Tóm tắt danh mục hằng ngày'],
       ACTIVITY_SUMMARY: ['Daily activity summary', 'Tóm tắt giao dịch hằng ngày'],
@@ -228,6 +234,7 @@ export function taskResultSummary(_task: Pick<TaskCandidate, 'type' | 'condition
     const partial = result.activityStatus === 'PARTIAL' ? locale === 'vi' ? ' (dữ liệu một phần)' : ' (partial data)' : ''
     return locale === 'vi' ? `Giao dịch hôm nay được Arc Explorer ghi nhận: ${count}${partial}.` : `Arc Explorer indexed transfers today: ${count}${partial}.`
   }
+  if (result.kind === 'REMINDER') return typeof result.text === 'string' && result.text.trim() ? result.text : locale === 'vi' ? 'Đã đến giờ nhắc việc.' : 'Time for your reminder.'
   if (result.kind === 'DAILY_BRIEFING') return taskBriefingLines(result, locale)[0] ?? (locale === 'vi' ? 'Đã có bản tin mới.' : 'New briefing ready.')
   if (result.kind === 'PORTFOLIO_SUMMARY' || result.kind === 'BALANCE_CHECK') {
     const { rows, incomplete } = taskBalanceRows(result)
@@ -276,6 +283,7 @@ export function taskBriefingLines(value: unknown, locale: 'en' | 'vi'): string[]
 export function taskDisplaySummary(value: unknown, locale: 'en' | 'vi'): string | null {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
   const result = value as Record<string, unknown>
+  if (result.kind === 'REMINDER') return typeof result.text === 'string' && result.text.trim() ? result.text : locale === 'vi' ? 'Đã đến giờ nhắc việc.' : 'Time for your reminder.'
   if (result.kind === 'TOKEN_PRICE') {
     const asset = typeof result.asset === 'string' && /^[A-Za-z]{2,6}$/.test(result.asset) ? result.asset : null
     const price = taskDecimal(result.price)

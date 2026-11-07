@@ -485,3 +485,27 @@ test('failed manual run returns non-success HTTP status and safe error code', as
     assert.equal(body.code, 'TASK_NETWORK_UNAVAILABLE')
   } finally { await close() }
 })
+
+test('a daily reminder is parsed with the user words and reads nothing', async () => {
+  const parsed = parseIntent({ text: 'nhắc tôi uống nước lúc 9:00 mỗi ngày', mode: 'automation', account: ACCOUNT, chainId: 5042002, timezone: 'Asia/Ho_Chi_Minh', locale: 'vi' })
+  assert.deepEqual(parsed.candidate.schedule, { kind: 'DAILY', time: '09:00', action: 'REMINDER', text: 'uống nước' })
+  assert.equal(parsed.candidate.title, 'uống nước')
+  // No time → the parser asks for it instead of guessing.
+  assert.deepEqual(parseIntent({ text: 'nhắc tôi uống nước mỗi ngày', mode: 'automation', account: ACCOUNT, chainId: 5042002, timezone: 'Asia/Ho_Chi_Minh', locale: 'vi' }).missingFields, ['time'])
+
+  // A reminder message longer than 200 characters is refused.
+  assert.throws(() => parseIntent({ text: `nhắc tôi ${'a'.repeat(201)} lúc 9:00 mỗi ngày`, mode: 'automation', account: ACCOUNT, chainId: 5042002, timezone: 'Asia/Ho_Chi_Minh', locale: 'vi' }), (error) => error instanceof TaskError && error.code === 'TASK_INVALID')
+
+  // Running it produces the stored message and never touches chain reads.
+  let readCalls = 0
+  const engine = new TaskEngine({ dbPath: ':memory:', reads: { ...reads(), readBalances: async () => { readCalls += 1; throw new Error('should not read') } }, generateSummary: async () => { throw new Error('should not call the model') } })
+  const task = engine.createForOwner(ACCOUNT, { ...BASE, type: 'SCHEDULED_AUTOMATION', schedule: { kind: 'DAILY', time: '09:00', action: 'REMINDER', text: 'uống nước' } })
+  const outcome = await engine.runForOwner(ACCOUNT, task.id, 'MANUAL')
+  assert.equal(outcome.run.status, 'SUCCESS')
+  assert.equal(outcome.run.result.kind, 'REMINDER')
+  assert.equal(outcome.run.result.languageSummary, 'uống nước')
+  assert.equal(readCalls, 0)
+  const notes = engine.notificationsForOwner(ACCOUNT)
+  assert.equal(notes[0].messageVi, 'uống nước')
+  assert.equal(notes[0].messageEn, 'uống nước')
+})

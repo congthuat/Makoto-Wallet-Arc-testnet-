@@ -55,3 +55,67 @@ test('a failed credit request never breaks the chat', async () => {
   const result = await verifyTopUp('0xabc', failing)
   assert.equal(result.ok, false)
 })
+
+import { claimCreditGift, createCreditGift, creditGiftIdFromHash, readCreditGift, readSentCreditGifts } from './credits.ts'
+
+const GIFT_ID = 'a'.repeat(32)
+
+test('a gift link is recognised only in the exact #credit-<32 hex> shape', () => {
+  assert.equal(creditGiftIdFromHash(`#credit-${GIFT_ID}`), GIFT_ID)
+  assert.equal(creditGiftIdFromHash(`#credit-${'A'.repeat(32)}`), GIFT_ID)
+  assert.equal(creditGiftIdFromHash('#credit-abc'), null)
+  assert.equal(creditGiftIdFromHash(`#gift-1-${'b'.repeat(64)}`), null)
+  assert.equal(creditGiftIdFromHash(''), null)
+})
+
+test('creating a gift reads the new balance from the server', async () => {
+  const calls: { url: string; body: unknown }[] = []
+  const fetcher = (async (url: string, init?: RequestInit) => {
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null })
+    return new Response(JSON.stringify({ ok: true, id: GIFT_ID, credits: 25, expiresAt: 1_800_000_000_000, enabled: true, freeLeft: 2, balance: 75, costPerMessage: 3, packs: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as unknown as typeof fetch
+  const result = await createCreditGift({ credits: 25, note: 'cà phê' }, fetcher)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.id, GIFT_ID)
+  assert.equal(result.state.balance, 75)
+  assert.deepEqual(calls[0].body, { credits: 25, note: 'cà phê' })
+})
+
+test('a refused gift keeps its error code for the UI', async () => {
+  const fetcher = (async () => new Response(JSON.stringify({ code: 'INSUFFICIENT', error: 'Not enough credits.' }), { status: 409, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
+  const result = await createCreditGift({ credits: 999 }, fetcher)
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.equal(result.code, 'INSUFFICIENT')
+  assert.equal(result.error, 'Not enough credits.')
+})
+
+test('a gift card is parsed safely and bad ids never hit the network', async () => {
+  let called = 0
+  const fetcher = (async () => {
+    called += 1
+    return new Response(JSON.stringify({ id: GIFT_ID, credits: 40, note: 'hi', from: '0x1111111111111111111111111111111111111111', claimed: false, expired: false, expiresAt: 1_800_000_000_000 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as unknown as typeof fetch
+  const gift = await readCreditGift(GIFT_ID, fetcher)
+  assert.equal(gift?.credits, 40)
+  assert.equal(gift?.claimed, false)
+  assert.equal(await readCreditGift('not-an-id', fetcher), null)
+  assert.equal(called, 1)
+})
+
+test('sent gifts ignore malformed rows', async () => {
+  const fetcher = (async () => new Response(JSON.stringify({ gifts: [{ id: GIFT_ID, credits: 20, note: '', createdAt: 1, expiresAt: 2, claimed: false, expired: false }, { id: 'bad' }, null] }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
+  const gifts = await readSentCreditGifts(fetcher)
+  assert.equal(gifts.length, 1)
+  assert.equal(gifts[0].credits, 20)
+})
+
+test('claiming returns the received amount and the new state', async () => {
+  const fetcher = (async () => new Response(JSON.stringify({ ok: true, credits: 30, enabled: true, freeLeft: 1, balance: 30, costPerMessage: 3, packs: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
+  const result = await claimCreditGift(GIFT_ID, fetcher)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.credits, 30)
+  assert.equal(result.state.balance, 30)
+})

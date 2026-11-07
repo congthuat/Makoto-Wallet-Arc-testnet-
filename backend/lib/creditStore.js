@@ -9,12 +9,20 @@
  */
 const fs = require('node:fs')
 const path = require('node:path')
+const crypto = require('node:crypto')
 // Same runtime-neutral loading as vaultStore: built-in node:sqlite in production,
 // the Bun shim in the preview sandbox.
 let DatabaseSync
 try { ({ DatabaseSync } = require('node:sqlite')) } catch { ({ DatabaseSync } = require('./sqlite')) }
 
 const SQLITE_BUSY_TIMEOUT_MS = 5_000
+
+/** A gift link: the sender's credits are held here until one friend claims them. */
+const GIFT_ID_RE = /^[0-9a-f]{32}$/
+const DEFAULT_GIFT_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const MIN_GIFT_CREDITS = 10
+const MAX_GIFT_CREDITS = 100_000
+const MAX_GIFT_NOTE = 120
 
 function persistentDir() {
   if (process.env.TASK_AUTH_DB_PATH) return path.dirname(process.env.TASK_AUTH_DB_PATH)
@@ -67,6 +75,18 @@ class CreditStore {
         used INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (address, day)
       );
+      CREATE TABLE IF NOT EXISTS credit_gifts (
+        id TEXT PRIMARY KEY,
+        from_address TEXT NOT NULL,
+        credits INTEGER NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        claimed_by TEXT,
+        claimed_at INTEGER,
+        refunded_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS credit_gifts_sender ON credit_gifts (from_address, created_at DESC);
     `)
   }
 
@@ -161,6 +181,126 @@ class CreditStore {
     }
   }
 
+  // ------------------------------------------------------------- credit gifts
+  // A gift is an escrow row: the sender's credits leave their balance the moment the
+  // link is created, and land in exactly one friend's balance when it is claimed.
+  // Unclaimed gifts return to the sender automatically once they expire.
+
+  /** Hand back any unclaimed gift whose time ran out. Safe to call often. */
+  sweepExpiredGifts(now = this.now()) {
+    const rows = this.db.prepare('SELECT id, from_address, credits FROM credit_gifts WHERE claimed_by IS NULL AND refunded_at IS NULL AND expires_at <= ?').all(now)
+    if (!rows.length) return 0
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      let refunded = 0
+      for (const row of rows) {
+        const done = this.db.prepare('UPDATE credit_gifts SET refunded_at = ? WHERE id = ? AND claimed_by IS NULL AND refunded_at IS NULL').run(now, row.id)
+        if (!done.changes) continue
+        this.db.prepare('INSERT INTO credit_balances (address, credits, updated_at) VALUES (?, ?, ?) ON CONFLICT(address) DO UPDATE SET credits = credits + excluded.credits, updated_at = excluded.updated_at')
+          .run(row.from_address, Number(row.credits), now)
+        refunded += 1
+      }
+      this.db.exec('COMMIT')
+      return refunded
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  /**
+   * Take credits out of the sender's balance and turn them into a shareable link.
+   * Returns { ok: true, id, balance, expiresAt } or { ok: false, code: 'INSUFFICIENT' | 'INVALID' }.
+   */
+  createGift({ from, credits, note = '', ttlMs = DEFAULT_GIFT_TTL_MS }) {
+    const key = normaliseAddress(from)
+    const amount = Number(credits)
+    if (!key) return { ok: false, code: 'INVALID' }
+    if (!Number.isSafeInteger(amount) || amount < MIN_GIFT_CREDITS || amount > MAX_GIFT_CREDITS) return { ok: false, code: 'INVALID' }
+    const text = typeof note === 'string' ? note.trim().slice(0, MAX_GIFT_NOTE) : ''
+    const now = this.now()
+    const expiresAt = now + Math.max(60_000, Number(ttlMs) || DEFAULT_GIFT_TTL_MS)
+    this.sweepExpiredGifts(now)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const step = this.db.prepare('UPDATE credit_balances SET credits = credits - ?, updated_at = ? WHERE address = ? AND credits >= ?').run(amount, now, key, amount)
+      if (!step.changes) { this.db.exec('ROLLBACK'); return { ok: false, code: 'INSUFFICIENT' } }
+      const id = crypto.randomBytes(16).toString('hex')
+      this.db.prepare('INSERT INTO credit_gifts (id, from_address, credits, note, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, key, amount, text, now, expiresAt)
+      this.db.exec('COMMIT')
+      return { ok: true, id, credits: amount, note: text, expiresAt, balance: this.balance(key) }
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  /** Public details of one gift link — enough to show a "someone sent you credits" card. */
+  giftInfo(id, now = this.now()) {
+    const key = typeof id === 'string' ? id.trim().toLowerCase() : ''
+    if (!GIFT_ID_RE.test(key)) return null
+    const row = this.db.prepare('SELECT id, from_address, credits, note, created_at, expires_at, claimed_by, claimed_at, refunded_at FROM credit_gifts WHERE id = ?').get(key)
+    if (!row) return null
+    const claimed = Boolean(row.claimed_by)
+    const expired = !claimed && (Boolean(row.refunded_at) || Number(row.expires_at) <= now)
+    return {
+      id: row.id,
+      credits: Number(row.credits),
+      note: row.note || '',
+      from: row.from_address,
+      createdAt: Number(row.created_at),
+      expiresAt: Number(row.expires_at),
+      claimed,
+      expired,
+    }
+  }
+
+  /**
+   * Claim a gift into the signed-in wallet. One claim per link, never your own gift.
+   * Returns { ok: true, credits, balance } or { ok: false, code }.
+   */
+  claimGift({ id, by }) {
+    const giftId = typeof id === 'string' ? id.trim().toLowerCase() : ''
+    const claimer = normaliseAddress(by)
+    if (!GIFT_ID_RE.test(giftId) || !claimer) return { ok: false, code: 'INVALID' }
+    this.sweepExpiredGifts()
+    const now = this.now()
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const row = this.db.prepare('SELECT id, from_address, credits, claimed_by, expires_at, refunded_at FROM credit_gifts WHERE id = ?').get(giftId)
+      if (!row) { this.db.exec('ROLLBACK'); return { ok: false, code: 'NOT_FOUND' } }
+      if (row.claimed_by) { this.db.exec('ROLLBACK'); return { ok: false, code: 'ALREADY_CLAIMED' } }
+      if (row.refunded_at || Number(row.expires_at) <= now) { this.db.exec('ROLLBACK'); return { ok: false, code: 'EXPIRED' } }
+      if (String(row.from_address).toLowerCase() === claimer) { this.db.exec('ROLLBACK'); return { ok: false, code: 'SELF_CLAIM' } }
+      const done = this.db.prepare('UPDATE credit_gifts SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL AND refunded_at IS NULL').run(claimer, now, giftId)
+      if (!done.changes) { this.db.exec('ROLLBACK'); return { ok: false, code: 'ALREADY_CLAIMED' } }
+      this.db.prepare('INSERT INTO credit_balances (address, credits, updated_at) VALUES (?, ?, ?) ON CONFLICT(address) DO UPDATE SET credits = credits + excluded.credits, updated_at = excluded.updated_at')
+        .run(claimer, Number(row.credits), now)
+      this.db.exec('COMMIT')
+      return { ok: true, credits: Number(row.credits), balance: this.balance(claimer) }
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  /** Gifts the signed-in wallet has sent, newest first, so it can re-share open links. */
+  giftsSentBy(address, limit = 20) {
+    const key = normaliseAddress(address)
+    if (!key) return []
+    const rows = this.db.prepare('SELECT id, credits, note, created_at, expires_at, claimed_by, claimed_at, refunded_at FROM credit_gifts WHERE from_address = ? ORDER BY created_at DESC, rowid DESC LIMIT ?')
+      .all(key, Math.max(1, Math.min(50, Number(limit) || 20)))
+    return rows.map((row) => ({
+      id: row.id,
+      credits: Number(row.credits),
+      note: row.note || '',
+      createdAt: Number(row.created_at),
+      expiresAt: Number(row.expires_at),
+      claimed: Boolean(row.claimed_by),
+      expired: !row.claimed_by && (Boolean(row.refunded_at) || Number(row.expires_at) <= this.now()),
+    }))
+  }
+
   close() { this.db.close() }
 }
 
@@ -170,4 +310,15 @@ function getCreditStore() {
   return singleton
 }
 
-module.exports = { CreditStore, getCreditStore, keyOf, normaliseAddress, utcDay, persistentDir }
+module.exports = {
+  CreditStore,
+  DEFAULT_GIFT_TTL_MS,
+  GIFT_ID_RE,
+  MAX_GIFT_CREDITS,
+  MIN_GIFT_CREDITS,
+  getCreditStore,
+  keyOf,
+  normaliseAddress,
+  persistentDir,
+  utcDay,
+}

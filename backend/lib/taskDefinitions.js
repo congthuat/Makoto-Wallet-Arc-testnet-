@@ -7,7 +7,16 @@ const TOKENS = Object.freeze({
   cirBTC: { address: '0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF', decimals: 8 },
 })
 const OPERATORS = Object.freeze({ LT: (a, b) => a < b, LTE: (a, b) => a <= b, GT: (a, b) => a > b, GTE: (a, b) => a >= b })
-const ACTIONS = Object.freeze(['PORTFOLIO_SUMMARY', 'ACTIVITY_SUMMARY', 'BALANCE_CHECK', 'DAILY_BRIEFING'])
+const ACTIONS = Object.freeze(['PORTFOLIO_SUMMARY', 'ACTIVITY_SUMMARY', 'BALANCE_CHECK', 'DAILY_BRIEFING', 'REMINDER'])
+/** A reminder is just a message: it reads nothing on-chain and can never move funds. */
+const MAX_REMINDER_LENGTH = 200
+
+function reminderText(value) {
+  if (typeof value !== 'string') throw new TaskError('TASK_INVALID', 'A reminder needs a message')
+  const text = value.normalize('NFC').replace(/\s+/g, ' ').trim()
+  if (!text || text.length > MAX_REMINDER_LENGTH) throw new TaskError('TASK_INVALID', 'A reminder message must be 1-200 characters')
+  return text
+}
 // Market price alerts (USD). Read-only: a triggered alert only notifies.
 const PRICE_ASSETS = Object.freeze(['BTC', 'ETH', 'SOL', 'USDC', 'EURC'])
 const PRICE_DECIMALS = 8
@@ -44,6 +53,7 @@ function formatUnits(value, decimals) {
 function dailyNext(schedule, zone, after) {
   const match = typeof schedule?.time === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.exec(schedule.time)
   if (schedule?.kind !== 'DAILY' || !match || !ACTIONS.includes(schedule.action)) throw new TaskError('TASK_SCHEDULE_INVALID')
+  if (schedule.action === 'REMINDER') reminderText(schedule.text)
   const [hour, minute] = schedule.time.split(':').map(Number)
   const cron = new Cron(`${minute} ${hour} * * *`, { timezone: timezone(zone), paused: true })
   const next = cron.nextRun(new Date(after))
@@ -101,9 +111,14 @@ function validateDefinition(input) {
   } else if (type === 'SCHEDULED_AUTOMATION') {
     const raw = input.schedule
     schedule = { kind: 'DAILY', time: raw?.time, action: raw?.action }
+    if (raw?.action === 'REMINDER') schedule = { ...schedule, text: reminderText(raw?.text) }
     dailyNext(schedule, zone, Date.now())
-    title = { PORTFOLIO_SUMMARY: 'Daily portfolio summary', ACTIVITY_SUMMARY: 'Daily activity summary', BALANCE_CHECK: 'Daily balance check', DAILY_BRIEFING: 'Morning briefing' }[schedule.action]
-    description = `${title} at ${schedule.time} (${zone})`
+    title = schedule.action === 'REMINDER'
+      ? schedule.text
+      : { PORTFOLIO_SUMMARY: 'Daily portfolio summary', ACTIVITY_SUMMARY: 'Daily activity summary', BALANCE_CHECK: 'Daily balance check', DAILY_BRIEFING: 'Morning briefing' }[schedule.action]
+    description = schedule.action === 'REMINDER'
+      ? `Reminder at ${schedule.time} (${zone})`
+      : `${title} at ${schedule.time} (${zone})`
     sourceIntent = description
   } else throw new TaskError('TASK_INVALID', 'Unsupported task type')
   return { type, title, description, status: 'ACTIVE', authority, account: boundAccount, chainId: CHAIN_ID, timezone: zone, sourceIntent, locale, condition, schedule, createdBy }
@@ -165,8 +180,25 @@ function parseIntent(input) {
   }
   const rawTime = s.match(/\b([01]?\d|2[0-3])(?::([0-5]\d)|h([0-5]?\d)?)\b/)
   const time = rawTime ? `${rawTime[1].padStart(2, '0')}:${(rawTime[2] ?? rawTime[3] ?? '00').padStart(2, '0')}` : null
-  const action = /(ban tin|briefing|tin tuc|\bnews\b|thi truong|\bmarket\b)/.test(s) ? 'DAILY_BRIEFING' : /(portfolio|danh muc|tai san)/.test(s) ? 'PORTFOLIO_SUMMARY' : /(activity|transaction|giao dich|hoat dong)/.test(s) ? 'ACTIVITY_SUMMARY' : /(balance|so du)/.test(s) ? 'BALANCE_CHECK' : null
   const recurrence = /(daily|every day|moi ngay|hang ngay|moi sang|moi toi)/.test(s)
+  // "nhắc tôi uống nước lúc 9h mỗi ngày" → a daily reminder that only notifies.
+  if (/\b(nhac|remind)\b/.test(s)) {
+    // Read the message from the text as typed: a reminder keeps the user's own words,
+    // including Vietnamese accents. The unaccented form is accepted too.
+    const asTyped = typeof text === 'string' ? text.normalize('NFC') : ''
+    const spoken = /(?:nhắc|nhac)(?:\s+(?:tôi|toi|mình|minh|em|anh|chị|chi))?(?:\s+to)?\s+(.+)$/i.exec(asTyped)
+      || /remind\s+me(?:\s+to)?\s+(.+)$/i.exec(asTyped)
+    const message = spoken
+      ? spoken[1]
+        .split(/\s+(?:lúc|luc|vào|vao|at|around|before|trước|truoc)\b/i)[0]
+        .replace(/\s*(?:mỗi ngày|moi ngay|hằng ngày|hang ngay|hàng ngày|daily|every day|every morning|mỗi sáng|moi sang|mỗi tối|moi toi)\b.*$/i, '')
+        .trim()
+      : ''
+    const missingFields = [!time && 'time', !message && 'text', !recurrence && 'recurrence'].filter(Boolean)
+    if (missingFields.length) return { candidate: null, missingFields }
+    return { candidate: validateDefinition({ ...base, type: 'SCHEDULED_AUTOMATION', schedule: { kind: 'DAILY', time, action: 'REMINDER', text: message } }), missingFields: [] }
+  }
+  const action = /(ban tin|briefing|tin tuc|\bnews\b|thi truong|\bmarket\b)/.test(s) ? 'DAILY_BRIEFING' : /(portfolio|danh muc|tai san)/.test(s) ? 'PORTFOLIO_SUMMARY' : /(activity|transaction|giao dich|hoat dong)/.test(s) ? 'ACTIVITY_SUMMARY' : /(balance|so du)/.test(s) ? 'BALANCE_CHECK' : null
   const missingFields = [!time && 'time', !action && 'action', !recurrence && 'recurrence'].filter(Boolean)
   if (missingFields.length) return { candidate: null, missingFields }
   return { candidate: validateDefinition({ ...base, type: 'SCHEDULED_AUTOMATION', schedule: { kind: 'DAILY', time, action } }), missingFields: [] }

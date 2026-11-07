@@ -46,6 +46,8 @@ function briefingLines(result, locale) {
 }
 
 function messageFor(task, result, locale = task.locale) {
+  // A reminder is the message the user wrote — never rewritten, never translated.
+  if (result.kind === 'REMINDER') return String(result.text || task.schedule?.text || '').slice(0, 200)
   if (result.kind === 'DAILY_BRIEFING') return briefingLines(result, locale).join('\n').slice(0, 900)
   if (result.kind === 'TOKEN_PRICE') {
     const comparison = { LT: locale === 'vi' ? 'dưới' : 'below', LTE: locale === 'vi' ? 'không quá' : 'at or below', GT: locale === 'vi' ? 'trên' : 'above', GTE: locale === 'vi' ? 'ít nhất' : 'at or above' }[task.condition.operator]
@@ -69,6 +71,7 @@ function messageFor(task, result, locale = task.locale) {
 function titleFor(task, locale) {
   if (task.type === 'CONDITION_MONITOR' && task.condition?.metric === 'TOKEN_PRICE') return locale === 'vi' ? `Cảnh báo giá ${task.condition.asset}` : `${task.condition.asset} price alert`
   if (task.type === 'CONDITION_MONITOR') return locale === 'vi' ? `Cảnh báo số dư ${task.condition.asset}` : `${task.condition.asset} balance alert`
+  if (task.schedule?.action === 'REMINDER') return task.schedule.text
   const names = locale === 'vi' ? { PORTFOLIO_SUMMARY: 'Tóm tắt danh mục hằng ngày', ACTIVITY_SUMMARY: 'Tóm tắt hoạt động hằng ngày', BALANCE_CHECK: 'Kiểm tra số dư hằng ngày', DAILY_BRIEFING: 'Bản tin buổi sáng' } : { PORTFOLIO_SUMMARY: 'Daily portfolio summary', ACTIVITY_SUMMARY: 'Daily activity summary', BALANCE_CHECK: 'Daily balance check', DAILY_BRIEFING: 'Morning briefing' }
   return names[task.schedule.action]
 }
@@ -338,7 +341,13 @@ class TaskEngine {
       let result
       try {
         if (claim.task.type === 'CONDITION_MONITOR') result = await this.evaluateMonitor(claim.task)
-        else result = await this.withLanguageSummary(claim.task, await this.summarize(claim.task))
+        else {
+          const observed = await this.summarize(claim.task)
+          // A reminder is the user's own words: no model call, no rewriting.
+          result = observed.kind === 'REMINDER'
+            ? { ...observed, languageSummary: observed.text, languageSource: 'USER_TEXT' }
+            : await this.withLanguageSummary(claim.task, observed)
+        }
       } catch (error) { return this.finishFailure(claim, error) }
       return this.finishSuccess(claim, result)
     } finally { clearInterval(heartbeat); this.inFlight.delete(id) }
@@ -382,6 +391,11 @@ class TaskEngine {
   async summarize(task) {
     if (task.chainId !== 5042002) throw new TaskError('TASK_NETWORK_UNAVAILABLE')
     const action = task.schedule.action
+    // Reminders touch no chain data at all: they only deliver the stored message.
+    if (action === 'REMINDER') {
+      const text = String(task.schedule.text || '').slice(0, 200)
+      return { kind: 'REMINDER', text, balances: {}, pricingStatus: 'NOT_REQUESTED', activityStatus: 'NOT_REQUESTED', summary: text, observedAt: iso(this.now()) }
+    }
     if (action === 'DAILY_BRIEFING') {
       const data = await this.briefing(task.account)
       return { kind: action, ...data, balances: {}, pricingStatus: Array.isArray(data.market) ? 'AVAILABLE' : 'UNAVAILABLE', activityStatus: 'NOT_REQUESTED', summary: briefingLines(data, 'en').join(' / ').slice(0, 600), observedAt: data.observedAt }

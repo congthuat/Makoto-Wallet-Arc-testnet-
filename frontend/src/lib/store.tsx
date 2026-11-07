@@ -435,7 +435,9 @@ function useWalletState() {
     if (typeof window === 'undefined') return
     const current = window.location.hash.slice(1)
     const linkable = ['about', 'legal', 'changelog', 'status', 'faucet', 'trust'] as string[]
-    const next = page === 'pay' ? (/^pay(?:-\d{1,20})?$/.test(current) ? current : 'pay') : page === 'gifts' ? (/^gift-\d{1,20}-[0-9a-fA-F]{64}$/.test(current) ? current : 'gifts') : linkable.includes(page) ? page : ''
+    // A credit-gift link is handled by the claim sheet; leave it alone until it is claimed or closed.
+    const creditGift = /^credit-[0-9a-fA-F]{32}$/.test(current)
+    const next = page === 'pay' ? (/^pay(?:-\d{1,20})?$/.test(current) ? current : 'pay') : page === 'gifts' ? (/^gift-\d{1,20}-[0-9a-fA-F]{64}$/.test(current) ? current : 'gifts') : creditGift ? current : linkable.includes(page) ? page : ''
     if (next === current) return
     const url = `${window.location.pathname}${window.location.search}${next ? `#${next}` : ''}`
     window.history.replaceState(window.history.state, '', url)

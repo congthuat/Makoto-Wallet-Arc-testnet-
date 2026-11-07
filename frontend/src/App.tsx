@@ -15,6 +15,7 @@ import { circularReveal, installCardSpotlight, staggerCards } from './lib/motion
 import { Avatar, Badge, Button, LiveDot, Logo, LogoLockup, Skeleton, T } from './components/wallet/ui'
 import { ConnectModal, ReceiveModal, TxDetailModal, copyText } from './components/wallet/shared'
 import { AgentCreditsPanel } from './components/AgentCredits'
+import { CreditGiftClaim } from './components/CreditGifts'
 import { FeedbackLink } from './components/wallet/FeedbackLink'
 import HomePage from './pages/Home'
 import { COMMUNITY } from './lib/community'
@@ -516,6 +517,7 @@ function Shell() {
       <CommandPalette onConnect={openConnect} />
       <FloatingAgent />
       <AgentCreditsPanel state={credits} onState={setCredits} open={creditsPanel.open} onClose={creditsPanel.hide} />
+      <CreditGiftClaim onState={setCredits} />
       <ReceiveModal />
       <TxDetailModal />
       <EmbeddedApproval />

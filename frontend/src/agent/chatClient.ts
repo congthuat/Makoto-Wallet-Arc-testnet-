@@ -17,7 +17,7 @@ export type ChatSource = 'REAL_PROVIDER' | 'LOCAL_FALLBACK' | 'DETERMINISTIC_TOO
 /** Untrusted model task draft (notify-only). Bound to the account on the device and re-validated by the server on create. */
 export type ChatTaskDraft = Readonly<
   | { type: 'CONDITION_MONITOR'; condition: { metric: 'TOKEN_PRICE' | 'TOKEN_BALANCE'; asset: 'USDC' | 'EURC' | 'cirBTC' | 'BTC' | 'ETH' | 'SOL'; operator: 'LT' | 'LTE' | 'GT' | 'GTE'; threshold: string; checkIntervalMinutes: number }; schedule: null }
-  | { type: 'SCHEDULED_AUTOMATION'; condition: null; schedule: { kind: 'DAILY'; time: string; action: 'PORTFOLIO_SUMMARY' | 'ACTIVITY_SUMMARY' | 'BALANCE_CHECK' | 'DAILY_BRIEFING' } }>
+  | { type: 'SCHEDULED_AUTOMATION'; condition: null; schedule: { kind: 'DAILY'; time: string; action: 'PORTFOLIO_SUMMARY' | 'ACTIVITY_SUMMARY' | 'BALANCE_CHECK' | 'DAILY_BRIEFING' | 'REMINDER'; text?: string } }>
 export type ChatResponse = Readonly<{ ok: true; text: string; source: 'REAL_PROVIDER'; sources?: readonly ChatDataSource[]; proposal?: ChatProposal; plan?: readonly PlanStep[]; task?: ChatTaskDraft; memory?: readonly ChatMemoryUpdate[]; charts?: readonly ChatChart[]; followups?: readonly string[]; credits?: unknown } | { ok: false; reason: string; source: 'LOCAL_FALLBACK'; aborted?: boolean; code?: string }>
 export type ChatStreamEvent = Readonly<{ type: 'status'; tool: string; source: string | null } | { type: 'delta'; text: string }>
 /** What the Agent may know about the user: notes, contact NAMES and preferences (no addresses). */
@@ -99,7 +99,12 @@ export function parseTaskDraft(value: unknown): ChatTaskDraft | undefined {
     return { type: 'CONDITION_MONITOR', schedule: null, condition: { metric: c.metric, asset: c.asset as 'BTC', operator: c.operator as 'LT', threshold: c.threshold, checkIntervalMinutes: c.checkIntervalMinutes } }
   }
   if (v.type === 'SCHEDULED_AUTOMATION' && s && s.kind === 'DAILY' && typeof s.time === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(s.time)
-    && typeof s.action === 'string' && ['PORTFOLIO_SUMMARY', 'ACTIVITY_SUMMARY', 'BALANCE_CHECK', 'DAILY_BRIEFING'].includes(s.action)) {
+    && typeof s.action === 'string' && ['PORTFOLIO_SUMMARY', 'ACTIVITY_SUMMARY', 'BALANCE_CHECK', 'DAILY_BRIEFING', 'REMINDER'].includes(s.action)) {
+    if (s.action === 'REMINDER') {
+      const text = typeof s.text === 'string' ? s.text.trim().slice(0, 200) : ''
+      if (!text) return undefined
+      return { type: 'SCHEDULED_AUTOMATION', condition: null, schedule: { kind: 'DAILY', time: s.time, action: 'REMINDER', text } }
+    }
     return { type: 'SCHEDULED_AUTOMATION', condition: null, schedule: { kind: 'DAILY', time: s.time, action: s.action as 'DAILY_BRIEFING' } }
   }
   return undefined

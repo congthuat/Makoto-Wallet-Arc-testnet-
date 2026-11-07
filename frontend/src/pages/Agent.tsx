@@ -763,7 +763,11 @@ export default function AgentPage() {
     const binding = taskBinding({ mode: w.mode, address: w.address, walletChainId: w.walletChainId })
     if (!binding.ok) return { ...base, text: `${text}\n\n${taskText(binding.reason === 'CHAIN_REQUIRED' ? 'chainFirst' : 'connectFirst', vi ? 'vi' : 'en')}` }
     if (!w.taskAuthenticated) return { ...base, text: `${text}\n\n${taskText('verifyWallet', vi ? 'vi' : 'en')}`, link: { label: '', taskTextKey: 'verifyWallet', page: 'tasks' } }
-    const label = draft.type === 'CONDITION_MONITOR' ? `${draft.condition.asset} ${draft.condition.metric === 'TOKEN_PRICE' ? 'price' : 'balance'} ${draft.condition.operator} ${draft.condition.threshold}` : `${draft.schedule.action} ${draft.schedule.time}`
+    const label = draft.type === 'CONDITION_MONITOR'
+      ? `${draft.condition.asset} ${draft.condition.metric === 'TOKEN_PRICE' ? 'price' : 'balance'} ${draft.condition.operator} ${draft.condition.threshold}`
+      : draft.schedule.action === 'REMINDER'
+        ? `${draft.schedule.text || (vi ? 'Nhắc việc' : 'Reminder')} · ${draft.schedule.time}`
+        : `${draft.schedule.action} ${draft.schedule.time}`
     const candidate: TaskCandidate = { ...draft, title: label, description: label, sourceIntent: label, account: binding.account, chainId: binding.chainId, timezone: binding.timezone, locale: vi ? 'vi' : 'en', authority: 'NOTIFY_ONLY', createdBy: 'AGENT' }
     return { ...base, task: candidate }
   }

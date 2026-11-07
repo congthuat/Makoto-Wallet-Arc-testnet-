@@ -87,6 +87,128 @@ export async function verifyTopUp(txHash: string, fetcher: typeof fetch = fetch)
   }
 }
 
+// ------------------------------------------------------------------ credit gifts
+// A gift is a link the sender creates from their own balance. The server holds the
+// credits until one friend claims them; unclaimed links return to the sender after 30 days.
+
+export const CREDIT_GIFT_RE = /^[0-9a-f]{32}$/
+export const MIN_GIFT_CREDITS = 10
+export const GIFT_PRESETS = [25, 50, 100, 200] as const
+
+export type CreditGiftInfo = Readonly<{
+  id: string
+  credits: number
+  note: string
+  from: string
+  claimed: boolean
+  expired: boolean
+  expiresAt: number
+}>
+export type CreditGiftResult = Readonly<
+  { ok: true; id: string; credits: number; expiresAt: number; state: CreditState } |
+  { ok: false; code: string; error: string }
+>
+
+function giftIdFrom(value: string): string | null {
+  const id = value.trim().toLowerCase()
+  return CREDIT_GIFT_RE.test(id) ? id : null
+}
+
+/** `#credit-<id>` is the shareable link a friend opens. */
+export function creditGiftIdFromHash(hash: string): string | null {
+  const match = /^#credit-([0-9a-fA-F]{32})$/.exec(hash.trim())
+  return match ? match[1].toLowerCase() : null
+}
+
+export function creditGiftLink(id: string): string {
+  const origin = typeof window === 'undefined' ? 'https://makotowallet.xyz/' : `${window.location.origin}${window.location.pathname}`
+  return `${origin}#credit-${id}`
+}
+
+export async function createCreditGift({ credits, note }: { credits: number; note?: string }, fetcher: typeof fetch = fetch): Promise<CreditGiftResult> {
+  try {
+    const response = await fetcher(api('credits/gift'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Makoto-Request': '1' },
+      body: JSON.stringify({ credits, note: note ?? '' }),
+    })
+    const body = await response.json().catch(() => null) as Record<string, unknown> | null
+    if (response.ok && body && typeof body.id === 'string') {
+      return { ok: true, id: body.id, credits: Number(body.credits ?? credits), expiresAt: Number(body.expiresAt ?? 0), state: parseCreditState(body) }
+    }
+    return { ok: false, code: typeof body?.code === 'string' ? body.code : 'CREDITS_UNAVAILABLE', error: typeof body?.error === 'string' ? body.error : 'Could not create that gift link.' }
+  } catch {
+    return { ok: false, code: 'CREDITS_UNAVAILABLE', error: 'Could not reach the credit service.' }
+  }
+}
+
+export async function readCreditGift(id: string, fetcher: typeof fetch = fetch): Promise<CreditGiftInfo | null> {
+  const key = giftIdFrom(id)
+  if (!key) return null
+  try {
+    const response = await fetcher(api(`credits/gift/${key}`), { credentials: 'same-origin', cache: 'no-store' })
+    if (!response.ok) return null
+    const body = await response.json() as Record<string, unknown>
+    return {
+      id: key,
+      credits: Number.isFinite(body.credits) ? Math.max(0, Math.trunc(Number(body.credits))) : 0,
+      note: typeof body.note === 'string' ? body.note : '',
+      from: typeof body.from === 'string' ? body.from : '',
+      claimed: body.claimed === true,
+      expired: body.expired === true,
+      expiresAt: Number.isFinite(body.expiresAt) ? Number(body.expiresAt) : 0,
+    }
+  } catch { return null }
+}
+
+export async function claimCreditGift(id: string, fetcher: typeof fetch = fetch): Promise<CreditGiftResult> {
+  const key = giftIdFrom(id)
+  if (!key) return { ok: false, code: 'INVALID', error: 'That gift link is not valid.' }
+  try {
+    const response = await fetcher(api('credits/gift/claim'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Makoto-Request': '1' },
+      body: JSON.stringify({ id: key }),
+    })
+    const body = await response.json().catch(() => null) as Record<string, unknown> | null
+    if (response.ok && body && typeof body.credits === 'number') {
+      return { ok: true, id: key, credits: Number(body.credits), expiresAt: 0, state: parseCreditState(body) }
+    }
+    return { ok: false, code: typeof body?.code === 'string' ? body.code : 'CREDITS_UNAVAILABLE', error: typeof body?.error === 'string' ? body.error : 'Could not claim that gift.' }
+  } catch {
+    return { ok: false, code: 'CREDITS_UNAVAILABLE', error: 'Could not reach the credit service.' }
+  }
+}
+
+export type SentCreditGift = Readonly<{ id: string; credits: number; note: string; createdAt: number; expiresAt: number; claimed: boolean; expired: boolean }>
+
+export async function readSentCreditGifts(fetcher: typeof fetch = fetch): Promise<SentCreditGift[]> {
+  try {
+    const response = await fetcher(api('credits/gifts'), { credentials: 'same-origin', cache: 'no-store' })
+    if (!response.ok) return []
+    const body = await response.json() as { gifts?: unknown }
+    if (!Array.isArray(body.gifts)) return []
+    return body.gifts.flatMap((item) => {
+      if (!item || typeof item !== 'object') return []
+      const v = item as Record<string, unknown>
+      if (typeof v.id !== 'string' || !CREDIT_GIFT_RE.test(v.id)) return []
+      return [{
+        id: v.id,
+        credits: Number.isFinite(v.credits) ? Math.max(0, Math.trunc(Number(v.credits))) : 0,
+        note: typeof v.note === 'string' ? v.note : '',
+        createdAt: Number(v.createdAt ?? 0),
+        expiresAt: Number(v.expiresAt ?? 0),
+        claimed: v.claimed === true,
+        expired: v.expired === true,
+      }]
+    })
+  } catch { return [] }
+}
+
 /** Can this wallet send one more Agent message right now? */
 export function canAfford(state: CreditState | undefined): boolean {
   if (!state || !state.enabled) return true
