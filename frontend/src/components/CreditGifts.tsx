@@ -20,6 +20,22 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 const shortAddress = (address: string) => address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
 
+/** Every refusal the gift routes can return, in words a friend can act on. */
+const GIFT_ERRORS: Record<string, string> = {
+  INSUFFICIENT: 'You do not have enough credits to send this gift.',
+  INVALID: 'That gift amount is not valid.',
+  AUTH_REQUIRED: 'Verify your wallet first.',
+  GIFT_RATE_LIMITED: 'Too many gift links just now. Try again in a few minutes.',
+  CREDITS_UNAVAILABLE: 'Credits are unavailable right now. Try again in a minute.',
+  NOT_FOUND: 'That gift link does not exist.',
+  ALREADY_CLAIMED: 'Someone already claimed this gift.',
+  EXPIRED: 'This gift link expired and the credits went back to the sender.',
+  SELF_CLAIM: 'You cannot claim a gift you sent yourself.',
+}
+
+const giftError = (code: string, translate: (text: string) => string) =>
+  translate(GIFT_ERRORS[code] ?? GIFT_ERRORS.CREDITS_UNAVAILABLE)
+
 const stamp = (ms: number) => {
   if (!Number.isFinite(ms) || ms <= 0) return ''
   try { return new Date(ms).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }) } catch { return '' }
@@ -80,7 +96,7 @@ export function CreditGiftSheet({ open, onClose, state, onState }: { open: boole
     setBusy(true); setError('')
     const result = await createCreditGift({ credits: chosen, note })
     setBusy(false)
-    if (!result.ok) { setError(result.error); return }
+    if (!result.ok) { setError(giftError(result.code, tr)); return }
     setCreated({ id: result.id, credits: result.credits })
     onState(result.state)
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([12, 40, 12])
@@ -285,7 +301,7 @@ export function CreditGiftClaim({ onState }: { onState: (next: CreditState) => v
     setBusy(true); setError('')
     const result = await claimCreditGift(id)
     setBusy(false)
-    if (!result.ok) { setError(result.error); return }
+    if (!result.ok) { setError(giftError(result.code, tr)); return }
     setDone(result.credits)
     onState(result.state)
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([14, 60, 14])
