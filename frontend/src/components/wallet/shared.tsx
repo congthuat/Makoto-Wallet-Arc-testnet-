@@ -66,6 +66,7 @@ export function TxRow({ tx, compact = false }: { tx: Tx; compact?: boolean }) {
         <span className={`block text-[12px] truncate ${T.mute}`}>
           {k === 'swap' || k === 'bridge' ? '' : `${tr(inbound ? 'From' : 'To')} `}<span className={contact || tx.counterpartyName || tx.route ? '' : 'font-mono text-[11.5px]'}>{who}</span> · {compact ? ago(tx.timestamp, lang) : new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', { hour: 'numeric', minute: '2-digit' }).format(tx.timestamp)}
         </span>
+        {tx.note && <span className="block text-[11.5px] truncate text-amber-200/80">“{tx.note}”</span>}
       </span>
       <span className="text-right shrink-0 flex flex-col items-end gap-1">
         <span className={`text-[13.5px] font-semibold font-num ${inbound && status === 'completed' ? 'text-live' : status === 'failed' ? 'text-[#83838E] line-through decoration-white/20' : ''}`}>

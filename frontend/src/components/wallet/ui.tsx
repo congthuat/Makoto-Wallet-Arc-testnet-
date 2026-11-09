@@ -69,7 +69,10 @@ export function TokenIcon({ color, glyph, size = 36 }: { color: string; glyph: s
 }
 
 // Deterministic gradient avatar from an address
-export function Avatar({ size = 24, seed = 'makoto' }: { size?: number; seed?: string }) {
+export function Avatar({ size = 24, seed = 'makoto', emoji }: { size?: number; seed?: string; emoji?: string }) {
+  if (emoji) {
+    return <span className="rounded-full shrink-0 ring-2 ring-white/10 inline-flex items-center justify-center bg-white/[0.07]" style={{ width: size, height: size, fontSize: Math.round(size * 0.56), lineHeight: 1 }} aria-hidden>{emoji}</span>
+  }
   let h = 0
   for (const c of seed) h = (h * 31 + c.charCodeAt(0)) % 360
   return (

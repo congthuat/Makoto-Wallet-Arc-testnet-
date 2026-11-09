@@ -56,7 +56,7 @@ const MOCK_TOKEN = {
 const MOCK_PREPARED: PreparedSend = {
   account: MOCK_ACCOUNT, chainId: 5042002,
   recipient: MOCK_RECIPIENT, token: MOCK_TOKEN,
-  amount: '1.0', units: 1_000_000n,
+  amount: '1.0', units: 1_000_000n, note: '',
   tokenBalance: 10_000_000n, usdcBalance: 10_000_000n,
   gasBalance: 1_000_000_000_000_000_000n,
   fee: 1_000_000_000_000n,

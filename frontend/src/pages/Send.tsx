@@ -13,6 +13,7 @@ import type { BrainPreparation, BrainReviewSnapshot } from '../brain/types'
 import { SendSubmissionGuard, assertFreshSend, feeInUsdcUnits, formatSendAmount, isWalletRejection, parseSendAmount, pollSendReceipt, prepareSend, requestSend, safeMax, type PreparedSend, type SendStatus } from '../lib/sendExecution'
 import { explorerTx } from '../lib/wallet'
 import { SuccessBurst } from '../components/wallet/SuccessBurst'
+import { MAX_MEMO_BYTES, cleanMemo, memoBytes } from '../lib/arcMemo'
 
 type Stage = 'form' | 'review' | 'preview' | 'result'
 const PREVIEW_STATES = ['Prepared', 'Wallet signature', 'Submitted', 'Confirming', 'Completed', 'Failed'] as const
@@ -81,6 +82,7 @@ export default function SendPage() {
   const [symbol, setSymbol] = useState('USDC')
   const [to, setTo] = useState('')
   const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
   const [stage, setStage] = useState<Stage>('form')
   const [ack, setAck] = useState(false)
   const [showBook, setShowBook] = useState(false)
@@ -123,7 +125,7 @@ export default function SendPage() {
     // A pending preparation must not restore review after its inputs change.
     reviewGeneration.current += 1
     setBrainReview(null); setPrepared(null); setStage((current) => current === 'review' ? 'form' : current)
-  }, [mode, address, walletChainId, symbol, to, amount])
+  }, [mode, address, walletChainId, symbol, to, amount, note])
   useEffect(() => () => { reviewGeneration.current += 1 }, [])
 
   const meta = TOKENS.find((t) => t.sym === symbol)!
@@ -193,7 +195,7 @@ export default function SendPage() {
     reviewInFlight.current = true
     setBusy(true)
     try {
-      const live = await prepareSend(p, { account: address, recipient: to, symbol, amount })
+      const live = await prepareSend(p, { account: address, recipient: to, symbol, amount, note })
       if (generation !== reviewGeneration.current) return
       const review = prepareBrainReview(brainAction(), { connected: true, account: live.account, chainId: live.chainId, balances: { [symbol]: Number(formatSendAmount(live.tokenBalance, meta.decimals)) }, knownRecipients: brainContext().knownRecipients })
       if (review.assessment.status === 'blocked' || review.assessment.status === 'unknown') throw new Error(review.assessment.blockers[0] ?? 'Unavailable until live checks pass')
@@ -201,7 +203,7 @@ export default function SendPage() {
     } catch (e) {
       if (generation === reviewGeneration.current) { notify(localError(e), 'err'); setStage('form') }
     } finally { reviewInFlight.current = false; setBusy(false) }
-  }, [canReview, busy, mode, address, to, symbol, amount, meta.decimals, brainAction, brainContext, notify, s, localError])
+  }, [canReview, busy, mode, address, to, symbol, amount, note, meta.decimals, brainAction, brainContext, notify, s, localError])
 
   useEffect(() => {
     if (!wantReview || busy || reviewInFlight.current) return
@@ -216,7 +218,7 @@ export default function SendPage() {
       const p = getProvider(); if (!p) { notify(s('Wallet disconnected'), 'err'); return }
       setBusy(true)
       try {
-      const fresh = await prepareSend(p, { account: address, recipient: to, symbol, amount })
+      const fresh = await prepareSend(p, { account: address, recipient: to, symbol, amount, note })
       assertFreshSend(prepared, fresh)
       const checked = revalidateBrainReview(brainReview, brainAction(), { connected: true, account: fresh.account, chainId: fresh.chainId, balances: { [symbol]: Number(formatSendAmount(fresh.tokenBalance, meta.decimals)) }, knownRecipients: brainContext().knownRecipients })
       if (!checked.valid || checked.assessment.status === 'unknown') throw new Error('Review expired or details changed. Review again.')
@@ -227,7 +229,7 @@ export default function SendPage() {
         setSendStatus('UNKNOWN'); setSendError(localError(e)); return
       }
       setSendHash(hash); setSendStatus('SUBMITTED')
-      const record = { hash, account: prepared.account, chainId: prepared.chainId, recipient: prepared.recipient, symbol, amount, timestamp: Date.now(), status: 'pending' as const }
+      const record = { hash, account: prepared.account, chainId: prepared.chainId, recipient: prepared.recipient, symbol, amount, ...(prepared.note ? { note: prepared.note } : {}), timestamp: Date.now(), status: 'pending' as const }
       upsertSend(record)
       const outcome = await pollSendReceipt(p, hash, prepared, () => setSendStatus('PENDING'))
       setSendStatus(outcome === 'confirmed' ? 'CONFIRMED' : outcome === 'failed' ? 'FAILED' : 'UNKNOWN')
@@ -241,7 +243,7 @@ export default function SendPage() {
 
   const trErr = (e: string) => e.startsWith('Insufficient ') ? s('Insufficient {asset} balance').replace('{asset}', symbol) : e.startsWith('Max ') ? s('Max {n} decimals').replace('{n}', String(meta.decimals)) : s(e)
 
-  const reset = () => { setStage('form'); setAmount(''); setTo(''); setAck(false); setPv('Wallet signature'); setBrainReview(null); setPrepared(null); setSendHash(null); setSendError(''); setSendStatus('READY') }
+  const reset = () => { setStage('form'); setAmount(''); setTo(''); setNote(''); setAck(false); setPv('Wallet signature'); setBrainReview(null); setPrepared(null); setSendHash(null); setSendError(''); setSendStatus('READY') }
 
   if (stage === 'result') {
     const resultCopy: Record<SendStatus, string> = { READY: 'Preparing live review…', REQUESTING_WALLET: 'Awaiting wallet confirmation', USER_REJECTED: 'Wallet request cancelled', SUBMITTED: 'Submitted; waiting for receipt', PENDING: 'Submitted; waiting for receipt', CONFIRMED: 'Transaction confirmed', FAILED: 'Transaction failed', UNKNOWN: 'Final status unknown; check the transaction before retrying' }
@@ -332,7 +334,7 @@ export default function SendPage() {
                     {contacts.length === 0 && <div className={`p-3 text-[13px] ${T.mute}`}>{tr('No contacts yet. Add them in Settings or after a transfer.')}</div>}
                     {contacts.map((c) => (
                       <button key={c.address} onClick={() => { setTo(c.address); setPrepared(null); setShowBook(false) }} className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/[0.06] text-left">
-                        <Avatar size={28} seed={c.address} />
+                        <Avatar size={28} seed={c.address} emoji={c.emoji} />
                         <span className="min-w-0"><span className="block text-[13px] font-semibold">{c.name}</span><span className={`block font-mono text-[11px] ${T.mute}`}>{short(c.address)}</span></span>
                       </button>
                     ))}
@@ -363,6 +365,20 @@ export default function SendPage() {
                   <button onClick={max} disabled={mode !== 'connected' || !toValid || !!toErr || walletChainId !== ARC.chainId || busy} className="shrink-0 text-[12px] font-bold px-2.5 py-1 rounded-lg bg-neon-500/20 text-neon-200 hover:bg-neon-500/30 disabled:opacity-40">{s('MAX')}</button>
                 </div>
                 <div className={`mt-1.5 text-[12px] tabular-nums ${T.mute}`}>{usdValue != null ? `≈ ${usd(usdValue)}` : ''}</div>
+              </Field>
+
+              <Field
+                label={tr('Note (optional)')}
+                hint={tr('Saved inside the transaction on Arc — the recipient sees it with the payment.')}
+                right={<span className={`text-[11.5px] tabular-nums ${memoBytes(note) > MAX_MEMO_BYTES ? 'text-rose-300' : T.mute}`}>{memoBytes(note)}/{MAX_MEMO_BYTES}</span>}
+              >
+                <input
+                  value={note}
+                  onChange={(e) => { setNote(cleanMemo(e.target.value)); setPrepared(null) }}
+                  placeholder={tr('e.g. Lunch on Saturday')}
+                  maxLength={200}
+                  className={`${inputCls} text-[13px]`}
+                />
               </Field>
 
               <div className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-4 text-[13px] space-y-2">
@@ -397,6 +413,7 @@ export default function SendPage() {
                 <div className="flex justify-between px-4 py-3"><dt className={T.mute}>{tr('Asset')}</dt><dd>{meta.name} ({symbol})</dd></div>
                 <div className="flex justify-between gap-3 px-4 py-3"><dt className={T.mute}>{tr('Amount')}</dt><dd className="font-num text-right break-words min-w-0">{amount} {symbol}{usdValue != null ? ` · ≈ ${usd(usdValue)}` : ''}</dd></div>
                 <div className="flex justify-between px-4 py-3"><dt className={T.mute}>{tr('Network')}</dt><dd>{ARC.name}</dd></div>
+                {note && <div className="flex justify-between gap-3 px-4 py-3"><dt className={`${T.mute} shrink-0`}>{tr('Note')}</dt><dd className="text-right min-w-0">“{note}”</dd></div>}
                 <div className="flex justify-between gap-3 px-4 py-3"><dt className={T.mute}>{s(mode === 'connected' ? 'Maximum fee' : 'Estimated fee')}</dt><dd className="tabular-nums text-right">{feeLabel ?? s('Unavailable')}</dd></div>
                 <div className="flex justify-between gap-3 px-4 py-3 font-semibold"><dt>{s('Total')}</dt><dd className="tabular-nums text-right break-words min-w-0">{totalLabel ?? s('Unavailable')}</dd></div>
               </dl>

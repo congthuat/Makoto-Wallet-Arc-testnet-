@@ -117,6 +117,12 @@ export const AGENT_I18N: Record<string, [string, string, string, string]> = {
   // Payment requests — 2026-10-26
   "Payment requests": ["Yêu cầu thanh toán", '', '', ''],
   "Gift links": ["Lì xì", '红包链接', 'ギフトリンク', '선물 링크'],
+  "Split a bill": ["Chia tiền nhóm", '分摊账单', '割り勘', '더치페이'],
+  "Note (optional)": ["Ghi chú (không bắt buộc)", '备注（可选）', 'メモ（任意）', '메모(선택)'],
+  "Note": ["Ghi chú", '备注', 'メモ', '메모'],
+  "Saved inside the transaction on Arc — the recipient sees it with the payment.": ["Được ghi vào chính giao dịch trên Arc — người nhận thấy lời nhắn kèm khoản tiền.", '备注会写入 Arc 上的这笔交易，收款人可随付款看到。', 'メモは Arc 上の取引に書き込まれ、受け取り側にも表示されます。', '메모는 Arc 거래에 기록되어 받는 사람도 함께 볼 수 있습니다.'],
+  "e.g. Lunch on Saturday": ["ví dụ: Ăn trưa thứ Bảy", '例如：周六午餐', '例：土曜のランチ', '예: 토요일 점심'],
+  "Change avatar": ["Đổi ảnh đại diện", '更换头像', 'アイコンを変更', '아바타 변경'],
   // Design 2.0 — 2026-10-26
   "TESTNET": ["TESTNET", '', '', ''],
   "Trust Center": ["Trung tâm an toàn", '', '', ''],

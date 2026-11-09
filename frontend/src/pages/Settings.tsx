@@ -35,6 +35,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 const selCls = 'h-9 px-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[13px] outline-none disabled:opacity-40'
 
+/** A friendly face for each contact, picked by tapping their avatar. */
+const CONTACT_EMOJI = ['🦊', '🐼', '🐯', '🐨', '🦉', '🐸', '🐙', '🦄', '🍀', '⭐', '🌙', '🚀', '🎈', '🍜', '☕', '🎧']
+function nextContactEmoji(current?: string): string {
+  const index = current ? CONTACT_EMOJI.indexOf(current) : -1
+  return CONTACT_EMOJI[(index + 1) % CONTACT_EMOJI.length]
+}
+
 export default function SettingsPage() {
   const { settings, setSettings, mode, address, displayAddress, disconnect, contacts, setContacts, notify, hidden, setHidden, network, networkError, go, setLockPreview } = useWallet()
   const [copied, runCopy] = useCopied()
@@ -107,7 +114,15 @@ export default function SettingsPage() {
             <div className={`px-5 py-6 text-[13px] text-center ${T.mute}`}><BookUser size={18} className="mx-auto mb-2" />{tr('Save frequent recipients to send faster and avoid address mistakes.')}</div>
           ) : contacts.map((c, i) => (
             <div key={c.address} className="flex items-center gap-3 px-4 sm:px-5 py-3">
-              <Avatar size={30} seed={c.address} />
+              <button
+                type="button"
+                aria-label={tr('Change avatar')}
+                title={tr('Change avatar')}
+                onClick={() => setContacts(contacts.map((x, j) => (j === i ? { ...x, emoji: nextContactEmoji(x.emoji) } : x)))}
+                className="rounded-full transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-neon-400/60"
+              >
+                <Avatar size={30} seed={c.address} emoji={c.emoji} />
+              </button>
               <div className="flex-1 min-w-0">
                 <input value={c.name} onChange={(e) => setContacts(contacts.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} className="bg-transparent outline-none text-[14px] font-medium w-full" />
                 <div className={`font-mono text-[12px] ${T.mute}`}>{short(c.address)}</div>

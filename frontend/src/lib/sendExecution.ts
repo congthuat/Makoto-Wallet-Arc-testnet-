@@ -2,12 +2,13 @@ import { ARC, TOKENS, getProvider, isAddress } from './wallet.ts'
 import type { TokenMeta } from './wallet.ts'
 import { _getRpcTimeoutMs } from './rpcTimeout.ts'
 import { rpcRead } from './arcRpc.ts'
+import { ARC_MEMO_ADDRESS, cleanMemo, memoCall } from './arcMemo.ts'
 
 export type SendProvider = NonNullable<ReturnType<typeof getProvider>>
 export type SendRequest = Readonly<{ from: string; to: string; data: string; value: '0x0'; gas: string; gasPrice: string }>
-export type PreparedSend = Readonly<{ account: string; chainId: number; recipient: string; token: TokenMeta; amount: string; units: bigint; tokenBalance: bigint; usdcBalance: bigint; gasBalance: bigint; fee: bigint; request: SendRequest; preparedAt: number; expiresAt: number }>
+export type PreparedSend = Readonly<{ account: string; chainId: number; recipient: string; token: TokenMeta; amount: string; units: bigint; note: string; tokenBalance: bigint; usdcBalance: bigint; gasBalance: bigint; fee: bigint; request: SendRequest; preparedAt: number; expiresAt: number }>
 export type SendStatus = 'READY' | 'REQUESTING_WALLET' | 'USER_REJECTED' | 'SUBMITTED' | 'PENDING' | 'CONFIRMED' | 'FAILED' | 'UNKNOWN'
-export type SendRecord = { hash: string; account: string; chainId: number; recipient: string; symbol: string; amount: string; timestamp: number; status: 'pending' | 'completed' | 'failed' | 'unknown' }
+export type SendRecord = { hash: string; account: string; chainId: number; recipient: string; symbol: string; amount: string; note?: string; timestamp: number; status: 'pending' | 'completed' | 'failed' | 'unknown' }
 const ZERO = '0x0000000000000000000000000000000000000000'
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
@@ -61,7 +62,7 @@ async function verifyToken(p: SendProvider, token: TokenMeta) {
   const symbol = new TextDecoder().decode(Uint8Array.from((bytes.slice(128, 128 + length * 2).match(/../g) ?? []).map((x) => parseInt(x, 16))))
   if (symbol !== token.sym) throw new Error(`${token.sym} metadata mismatch`)
 }
-export async function prepareSend(p: SendProvider, input: { account: string; recipient: string; symbol: string; amount: string }, now = Date.now()): Promise<PreparedSend> {
+export async function prepareSend(p: SendProvider, input: { account: string; recipient: string; symbol: string; amount: string; note?: string }, now = Date.now()): Promise<PreparedSend> {
   const { account, chainId } = await chainAndAccount(p)
   if (account.toLowerCase() !== input.account.toLowerCase()) throw new Error('Connected account changed')
   const recipient = safeAddress(input.recipient)
@@ -73,10 +74,16 @@ export async function prepareSend(p: SendProvider, input: { account: string; rec
   if (code !== '0x') throw new Error('Contract recipient is unavailable')
   await verifyToken(p, token)
   const usdc = TOKENS[0]
+  // A note travels inside the transaction through Arc's Memo precompile; the wallet
+  // still signs for itself, and the recipient sees the ordinary USDC transfer plus a note.
+  const note = cleanMemo(input.note ?? '')
+  const transfer = encodeTransfer(recipient, units)
+  const callTo = note ? ARC_MEMO_ADDRESS : token.address
+  const callData = note ? memoCall(token.address as `0x${string}`, transfer as `0x${string}`, note) : transfer
   const [tokenBalance, usdcBalance, gasBalance, estimate, gasPrice] = await Promise.all([
     readTokenBalance(p, token, account), readTokenBalance(p, usdc, account),
     req(p, 'eth_getBalance', [account, 'latest']).then((x) => asBigInt(x, 'gas balance')),
-    req(p, 'eth_estimateGas', [{ from: account, to: token.address, data: encodeTransfer(recipient, units), value: '0x0' }]).then((x) => asBigInt(x, 'gas estimate')),
+    req(p, 'eth_estimateGas', [{ from: account, to: callTo, data: callData, value: '0x0' }]).then((x) => asBigInt(x, 'gas estimate')),
     req(p, 'eth_gasPrice').then((x) => asBigInt(x, 'gas price')),
   ])
   if (units > tokenBalance) throw new Error(`Insufficient ${token.sym} balance`)
@@ -86,7 +93,7 @@ export async function prepareSend(p: SendProvider, input: { account: string; rec
   if (gas <= 0n || boundedPrice <= 0n) throw new Error('Fee estimate unavailable')
   const fee = gas * boundedPrice
   if (gasBalance < fee || usdcBalance < feeInUsdcUnits(fee) + (token.sym === 'USDC' ? units : 0n)) throw new Error('Insufficient USDC for amount and fee')
-  return Object.freeze({ account, chainId, recipient, token, amount: input.amount, units, tokenBalance, usdcBalance, gasBalance, fee, request: Object.freeze({ from: account, to: token.address, data: encodeTransfer(recipient, units), value: '0x0', gas: hex(gas), gasPrice: hex(boundedPrice) }), preparedAt: now, expiresAt: now + 60_000 })
+  return Object.freeze({ account, chainId, recipient, token, amount: input.amount, units, note, tokenBalance, usdcBalance, gasBalance, fee, request: Object.freeze({ from: account, to: callTo, data: callData, value: '0x0', gas: hex(gas), gasPrice: hex(boundedPrice) }), preparedAt: now, expiresAt: now + 60_000 })
 }
 export function samePrepared(a: PreparedSend, b: PreparedSend) {
   return a.account.toLowerCase() === b.account.toLowerCase() && a.chainId === b.chainId && a.recipient.toLowerCase() === b.recipient.toLowerCase() && a.token.address.toLowerCase() === b.token.address.toLowerCase() && a.units === b.units && JSON.stringify(a.request).toLowerCase() === JSON.stringify(b.request).toLowerCase()

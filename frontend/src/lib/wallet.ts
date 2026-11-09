@@ -74,6 +74,8 @@ export type Tx = {
   toSymbol?: string
   toAmount?: number
   fee?: number
+  /** A note the sender attached; stored on-chain through Arc's Memo contract. */
+  note?: string
 }
 export const txKind = (t: Tx) => t.kind ?? (t.direction === 'in' ? 'receive' : 'send')
 
@@ -95,7 +97,7 @@ export type NetworkInfo = {
   transferFeeUsdc: number; tokenTransferFeeUsdc: number; rpcLatencyMs: number; updatedAt: number
 }
 
-export type Contact = { name: string; address: string }
+export type Contact = { name: string; address: string; emoji?: string }
 
 // DEMO wallet — sample data for design preview, used until a wallet is connected / watched
 export const DEMO_ADDRESS = '0x1629…586B'

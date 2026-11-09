@@ -18,7 +18,7 @@ import {
   type Contact, type Holding, type NetworkInfo, type Prices, type Tx, type WalletApi,
 } from './wallet'
 
-export type Page = 'home' | 'agent' | 'tasks' | 'dashboard' | 'assets' | 'activity' | 'send' | 'swap' | 'bridge' | 'pay' | 'gifts' | 'settings' | 'insights' | 'audit' | 'faucet' | 'about' | 'legal' | 'changelog' | 'status' | 'trust'
+export type Page = 'home' | 'agent' | 'tasks' | 'dashboard' | 'assets' | 'activity' | 'send' | 'swap' | 'bridge' | 'pay' | 'split' | 'gifts' | 'settings' | 'insights' | 'audit' | 'faucet' | 'about' | 'legal' | 'changelog' | 'status' | 'trust'
 
 export type FeedTx = {
   hash: string; logIndex: number; block: number; timestamp: string; from: string | null; to: string | null
@@ -313,6 +313,8 @@ function useWalletState() {
 
   const activity: Tx[] = useMemo(() => {
     if (!live) return DEMO_ACTIVITY
+    // A note is written on-chain but the explorer does not decode it; keep our own copy by hash.
+    const notes = new Map(sendRecords.filter((r) => !!r.note).map((r) => [r.hash.toLowerCase(), r.note as string]))
     const indexed: Tx[] = (wallet.data?.activity ?? []).map((a) => ({
       id: `${a.hash}-${a.logIndex}`,
       hash: a.hash,
@@ -327,8 +329,9 @@ function useWalletState() {
       block: a.block,
       kind: (a.method === 'exchange' || /swap/i.test(a.fromName ?? a.toName ?? '') ? 'swap' : a.direction === 'in' ? 'receive' : 'send') as Tx['kind'],
       status: 'completed' as const, // indexed by the explorer = included in a block
+      ...(notes.has(a.hash.toLowerCase()) ? { note: notes.get(a.hash.toLowerCase()) as string } : {}),
     }))
-    const local: Tx[] = sendRecords.filter((r) => r.account.toLowerCase() === address.toLowerCase() && r.chainId === 5042002 && !indexed.some((a) => a.hash?.toLowerCase() === r.hash.toLowerCase() && a.direction === 'out' && a.symbol === r.symbol && a.counterparty.toLowerCase() === r.recipient.toLowerCase() && a.amount === Number(r.amount))).map((r) => ({ id: r.hash, hash: r.hash, timestamp: r.timestamp, direction: 'out', counterparty: r.recipient, symbol: r.symbol, amount: Number(r.amount), verified: true, kind: 'send', status: sendActivityStatus(r.status) }))
+    const local: Tx[] = sendRecords.filter((r) => r.account.toLowerCase() === address.toLowerCase() && r.chainId === 5042002 && !indexed.some((a) => a.hash?.toLowerCase() === r.hash.toLowerCase() && a.direction === 'out' && a.symbol === r.symbol && a.counterparty.toLowerCase() === r.recipient.toLowerCase() && a.amount === Number(r.amount))).map((r) => ({ id: r.hash, hash: r.hash, timestamp: r.timestamp, direction: 'out', counterparty: r.recipient, symbol: r.symbol, amount: Number(r.amount), verified: true, kind: 'send', status: sendActivityStatus(r.status), ...(r.note ? { note: r.note } : {}) }))
     const swaps = (Array.isArray(swapRecords) ? swapRecords : []).filter((r) => r.account?.toLowerCase() === address.toLowerCase() && /^0x[0-9a-f]{64}$/i.test(r.hash)).map((r): Tx => ({ id: `swap-${r.hash}`, hash: r.hash, timestamp: r.timestamp, direction: 'out', counterparty: r.target, symbol: r.fromSymbol, amount: Number(r.amount), verified: true, kind: 'swap', status: r.status, route: `${r.fromSymbol} → ${r.toSymbol}`, toSymbol: r.toSymbol }))
     const swapHashes = new Set(swaps.map((record) => record.hash?.toLowerCase()))
     const bridges = (Array.isArray(bridgeRecords) ? bridgeRecords : []).filter((r) => r.account?.toLowerCase() === address.toLowerCase() && /^0x[0-9a-f]{64}$/i.test(r.hash)).map((r): Tx => ({ id: `bridge-${r.hash}`, hash: r.hash, timestamp: r.timestamp, direction: 'out', counterparty: r.target, counterpartyName: `Circle CCTP · ${r.status}`, symbol: 'USDC', amount: Number(r.amount), verified: true, kind: 'bridge', status: r.status === 'destination-confirmed' ? 'completed' : ['failed', 'destination-failed', 'forwarding-failed'].includes(r.status) ? 'failed' : r.status === 'source-unknown' ? 'unknown' : 'pending', route: 'Arc Testnet → Base Sepolia' }))

@@ -94,7 +94,7 @@ function minimalPrepared(): PreparedSend {
   const token = TOKENS[0] // USDC
   return Object.freeze({
     account, chainId: 5042002, recipient, token,
-    amount: '1', units: 1_000_000n,
+    amount: '1', units: 1_000_000n, note: '',
     tokenBalance: 10_000_000n, usdcBalance: 10_000_000n, gasBalance: 10n ** 18n,
     fee: 1_000_000_000_000_000n,
     request: Object.freeze({
