@@ -169,3 +169,19 @@ html[data-theme=light] .mk-header[data-scrolled] { background-color: rgba(246, 2
   ::view-transition-new(root) { animation: none }
   .mk-primary::after { display: none }
 }
+
+/* Contacts — avatar picker cells + contact cards */
+@keyframes mk-av-in { from { opacity: 0; transform: scale(.6) } to { opacity: 1; transform: none } }
+.mk-av-cell { background: rgba(255,255,255,.03); border: 1px solid transparent; animation: mk-av-in .35s var(--mk-ease-spring) both; transition: transform .25s var(--mk-ease-spring), background-color .2s, border-color .2s, box-shadow .25s }
+.mk-av-cell:hover { transform: scale(1.14) rotate(-4deg); background: rgba(255,255,255,.08) }
+.mk-av-cell.is-on { background: rgba(212,255,58,.12); border-color: rgba(212,255,58,.55); box-shadow: 0 0 18px -4px rgba(212,255,58,.55) }
+html[data-theme=light] .mk-av-cell { background: rgba(0,0,0,.03) }
+html[data-theme=light] .mk-av-cell.is-on { background: rgba(140,190,0,.14); border-color: rgba(120,170,0,.6) }
+.mk-contact { transition: transform .35s var(--mk-ease-spring), border-color .25s, box-shadow .3s }
+.mk-contact:hover { transform: translateY(-3px); border-color: rgba(212,255,58,.35); box-shadow: 0 14px 34px -18px rgba(212,255,58,.45) }
+.mk-contact .mk-contact-av { transition: transform .45s var(--mk-ease-spring) }
+.mk-contact:hover .mk-contact-av { transform: scale(1.08) rotate(-6deg) }
+.mk-contact .mk-contact-edit { opacity: 0; transform: scale(.6); transition: opacity .2s, transform .3s var(--mk-ease-spring) }
+.mk-contact:hover .mk-contact-edit, .mk-contact .mk-contact-av-btn:focus-visible .mk-contact-edit { opacity: 1; transform: none }
+@media (hover: none) { .mk-contact .mk-contact-edit { opacity: 1; transform: none } }
+@media (prefers-reduced-motion: reduce) { .mk-av-cell { animation: none } .mk-contact, .mk-contact:hover, .mk-contact:hover .mk-contact-av { transform: none } }

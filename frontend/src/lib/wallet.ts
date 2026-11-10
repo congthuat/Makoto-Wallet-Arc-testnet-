@@ -97,7 +97,7 @@ export type NetworkInfo = {
   transferFeeUsdc: number; tokenTransferFeeUsdc: number; rpcLatencyMs: number; updatedAt: number
 }
 
-export type Contact = { name: string; address: string; emoji?: string }
+export type Contact = { name: string; address: string; emoji?: string; tone?: number }
 
 // DEMO wallet — sample data for design preview, used until a wallet is connected / watched
 export const DEMO_ADDRESS = '0x1629…586B'

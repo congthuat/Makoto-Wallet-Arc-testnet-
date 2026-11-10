@@ -334,7 +334,7 @@ export default function SendPage() {
                     {contacts.length === 0 && <div className={`p-3 text-[13px] ${T.mute}`}>{tr('No contacts yet. Add them in Settings or after a transfer.')}</div>}
                     {contacts.map((c) => (
                       <button key={c.address} onClick={() => { setTo(c.address); setPrepared(null); setShowBook(false) }} className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/[0.06] text-left">
-                        <Avatar size={28} seed={c.address} emoji={c.emoji} />
+                        <Avatar size={28} seed={c.address} emoji={c.emoji} tone={c.tone} />
                         <span className="min-w-0"><span className="block text-[13px] font-semibold">{c.name}</span><span className={`block font-mono text-[11px] ${T.mute}`}>{short(c.address)}</span></span>
                       </button>
                     ))}
@@ -459,7 +459,7 @@ export default function SendPage() {
               ))}
               {!activity.some((a) => a.direction === 'out') && <p className={`text-[13px] ${T.mute}`}>{tr('No outgoing transfers yet.')}</p>}
             </div>
-            <Button variant="ghost" size="sm" className="mt-2" onClick={() => go('settings')}>{tr('Manage address book')}</Button>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={() => go('contacts')}>{tr('Manage address book')}</Button>
           </Card>
           <Badge>{tr(mode === 'connected' ? 'Wallet connected' : mode === 'watch' ? 'Watch-only' : 'Demo')}</Badge>
         </div>

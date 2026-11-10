@@ -18,7 +18,7 @@ import {
   type Contact, type Holding, type NetworkInfo, type Prices, type Tx, type WalletApi,
 } from './wallet'
 
-export type Page = 'home' | 'agent' | 'tasks' | 'dashboard' | 'assets' | 'activity' | 'send' | 'swap' | 'bridge' | 'pay' | 'split' | 'gifts' | 'settings' | 'insights' | 'audit' | 'faucet' | 'about' | 'legal' | 'changelog' | 'status' | 'trust'
+export type Page = 'home' | 'agent' | 'tasks' | 'dashboard' | 'assets' | 'activity' | 'send' | 'swap' | 'bridge' | 'pay' | 'split' | 'contacts' | 'gifts' | 'settings' | 'insights' | 'audit' | 'faucet' | 'about' | 'legal' | 'changelog' | 'status' | 'trust'
 
 export type FeedTx = {
   hash: string; logIndex: number; block: number; timestamp: string; from: string | null; to: string | null

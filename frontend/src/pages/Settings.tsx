@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { BookUser, ExternalLink, Lock, LogOut, Network, Plus, Trash2, Wallet, Bell, Eye, KeyRound, Globe, Palette, Filter, Activity, BookOpen, MessageSquare, Sparkles, Gauge } from 'lucide-react'
+import { BookUser, ExternalLink, Lock, LogOut, Network,  Wallet, Bell, Eye, KeyRound, Globe, Palette, Filter, Activity, BookOpen, MessageSquare, Sparkles, Gauge } from 'lucide-react'
 import { useWallet } from '../lib/store'
 import { LANGS, setLang, useT, type Lang } from '../lib/i18n'
 import { useTheme } from '../lib/theme'
-import { ARC, ensureArcNetwork, getProvider, isAddress, short } from '../lib/wallet'
-import { Avatar, Badge, Button, Card, LiveDot, PageHeader, Segmented, T, Toggle, inputCls } from '../components/wallet/ui'
+import { ARC, ensureArcNetwork, getProvider } from '../lib/wallet'
+import { Avatar, Badge, Button, Card, LiveDot, PageHeader, Segmented, T, Toggle } from '../components/wallet/ui'
 import { ConnectModal, copyText } from '../components/wallet/shared'
 import { CopyGlyph, useCopied } from '../components/wallet/CopyButton'
 import { FeedbackLink } from '../components/wallet/FeedbackLink'
@@ -36,20 +36,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 const selCls = 'h-9 px-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[13px] outline-none disabled:opacity-40'
 
 /** A friendly face for each contact, picked by tapping their avatar. */
-const CONTACT_EMOJI = ['🦊', '🐼', '🐯', '🐨', '🦉', '🐸', '🐙', '🦄', '🍀', '⭐', '🌙', '🚀', '🎈', '🍜', '☕', '🎧']
-function nextContactEmoji(current?: string): string {
-  const index = current ? CONTACT_EMOJI.indexOf(current) : -1
-  return CONTACT_EMOJI[(index + 1) % CONTACT_EMOJI.length]
-}
 
 export default function SettingsPage() {
-  const { settings, setSettings, mode, address, displayAddress, disconnect, contacts, setContacts, notify, hidden, setHidden, network, networkError, go, setLockPreview } = useWallet()
+  const { settings, setSettings, mode, address, displayAddress, disconnect, contacts, notify, hidden, setHidden, network, networkError, go, setLockPreview } = useWallet()
   const [copied, runCopy] = useCopied()
   const [connectOpen, setConnectOpen] = useState(false)
   const [tr, lang] = useT()
   const [theme, setTheme] = useTheme()
-  const [cName, setCName] = useState('')
-  const [cAddr, setCAddr] = useState('')
   const set = (p: Partial<typeof settings>) => setSettings({ ...settings, ...p })
 
   const addToWallet = async () => {
@@ -104,32 +97,9 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Address book">
-          <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-[1fr_1.6fr_auto] gap-2">
-            <input value={cName} onChange={(e) => setCName(e.target.value)} placeholder={tr('Name')} className={`${inputCls} h-10 text-[13px] rounded-xl`} />
-            <input value={cAddr} onChange={(e) => setCAddr(e.target.value)} placeholder={tr('0x… address')} className={`${inputCls} h-10 text-[13px] rounded-xl font-mono`} />
-            <Button disabled={!cName.trim() || !isAddress(cAddr) || contacts.some((c) => c.address.toLowerCase() === cAddr.trim().toLowerCase())}
-              onClick={() => { setContacts([...contacts, { name: cName.trim(), address: cAddr.trim() }]); setCName(''); setCAddr(''); notify(tr('Contact saved')) }}><Plus size={14} /> {tr('Add')}</Button>
-          </div>
-          {contacts.length === 0 ? (
-            <div className={`px-5 py-6 text-[13px] text-center ${T.mute}`}><BookUser size={18} className="mx-auto mb-2" />{tr('Save frequent recipients to send faster and avoid address mistakes.')}</div>
-          ) : contacts.map((c, i) => (
-            <div key={c.address} className="flex items-center gap-3 px-4 sm:px-5 py-3">
-              <button
-                type="button"
-                aria-label={tr('Change avatar')}
-                title={tr('Change avatar')}
-                onClick={() => setContacts(contacts.map((x, j) => (j === i ? { ...x, emoji: nextContactEmoji(x.emoji) } : x)))}
-                className="rounded-full transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-neon-400/60"
-              >
-                <Avatar size={30} seed={c.address} emoji={c.emoji} />
-              </button>
-              <div className="flex-1 min-w-0">
-                <input value={c.name} onChange={(e) => setContacts(contacts.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} className="bg-transparent outline-none text-[14px] font-medium w-full" />
-                <div className={`font-mono text-[12px] ${T.mute}`}>{short(c.address)}</div>
-              </div>
-              <button onClick={() => setContacts(contacts.filter((_, j) => j !== i))} className={`p-2 rounded-lg ${T.mute} hover:text-rose-300 hover:bg-rose-500/10`} aria-label={tr('Delete contact')}><Trash2 size={15} /></button>
-            </div>
-          ))}
+          <Row icon={BookUser} title="Contacts"
+            desc={<span className="inline-flex items-center gap-2">{contacts.length > 0 && <span className="flex -space-x-1.5">{contacts.slice(-4).map((c) => <span key={c.address} className="rounded-full ring-2 ring-[#121219]"><Avatar size={20} seed={c.address} emoji={c.emoji} tone={c.tone} /></span>)}</span>}{tr('{n} saved').replace('{n}', String(contacts.length))}</span>}
+            right={<Button size="sm" onClick={() => go('contacts')}>{tr('Open')}</Button>} />
         </Section>
 
         <Section title="About">

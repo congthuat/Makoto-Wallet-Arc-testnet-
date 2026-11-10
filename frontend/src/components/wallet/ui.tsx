@@ -2,6 +2,7 @@ import { useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { FlaskConical, X } from 'lucide-react'
 import { useT } from '../../lib/i18n'
+import { toneOf } from '../../lib/contactAvatars'
 
 export const T = { text: 'text-[#F5F5F5]', sub: 'text-[#A3A3AD]', mute: 'text-[#83838E]' } // dark values refined in index.css (Makoto Pro layer)
 
@@ -69,9 +70,10 @@ export function TokenIcon({ color, glyph, size = 36 }: { color: string; glyph: s
 }
 
 // Deterministic gradient avatar from an address
-export function Avatar({ size = 24, seed = 'makoto', emoji }: { size?: number; seed?: string; emoji?: string }) {
+export function Avatar({ size = 24, seed = 'makoto', emoji, tone }: { size?: number; seed?: string; emoji?: string; tone?: number }) {
   if (emoji) {
-    return <span className="rounded-full shrink-0 ring-2 ring-white/10 inline-flex items-center justify-center bg-white/[0.07]" style={{ width: size, height: size, fontSize: Math.round(size * 0.56), lineHeight: 1 }} aria-hidden>{emoji}</span>
+    const t = toneOf(tone)
+    return <span className="rounded-full shrink-0 inline-flex items-center justify-center" style={{ width: size, height: size, fontSize: Math.round(size * 0.56), lineHeight: 1, background: t.bg, boxShadow: `0 0 0 2px ${t.ring}` }} aria-hidden>{emoji}</span>
   }
   let h = 0
   for (const c of seed) h = (h * 31 + c.charCodeAt(0)) % 360

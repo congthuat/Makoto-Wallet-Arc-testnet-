@@ -511,7 +511,7 @@ function ContextPanel({ flow, actions = [], onAction = () => {}, memoryNotes, on
           ))}
         </div>
       </Card>
-      {memoryNotes && <MemoryPanel notes={memoryNotes} contacts={contacts.length} onRemove={onRemoveNote} onOpenContacts={() => go('settings')} />}
+      {memoryNotes && <MemoryPanel notes={memoryNotes} contacts={contacts.length} onRemove={onRemoveNote} onOpenContacts={() => go('contacts')} />}
       <Card className="p-4">
         <div className={`flex items-center gap-2 text-[12px] font-semibold ${T.mute}`}><Boxes size={13} /> {tr('NETWORK')}</div>
         <div className="mt-2 flex items-center gap-2 text-[13px]"><LiveDot off={networkError} /> {networkError ? tr('Network unavailable') : network ? `${ARC.name} · ${tr('Online')}` : tr('Checking network…')}</div>
