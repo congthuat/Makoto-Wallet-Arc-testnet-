@@ -136,7 +136,7 @@ function CollectCard({ vi }: { vi: boolean }) {
                 const on = picked.includes(c.address)
                 return (
                   <button key={c.address} onClick={() => { toggle(c.address); setCreated(null) }} className={`inline-flex items-center gap-1.5 h-8 pl-1.5 pr-2.5 rounded-full border text-[12.5px] transition ${on ? 'border-neon-400/60 bg-neon-500/10 text-white' : 'border-white/[0.09] bg-white/[0.02] text-[#c9c9d2] hover:bg-white/[0.06]'}`}>
-                    <Avatar size={20} seed={c.address} emoji={c.emoji} tone={c.tone} />
+                    <Avatar size={20} seed={c.address} emoji={c.emoji} tone={c.tone} photo={c.photo} />
                     <span className="max-w-[120px] truncate">{c.name}</span>
                     {on && <Check size={12} className="text-neon-300" />}
                   </button>
@@ -176,7 +176,7 @@ function CollectCard({ vi }: { vi: boolean }) {
                   `${c.name} ơi, phần của bạn là ${created.per} USDC. Trả tại đây: ${link}`)
                 return (
                   <div key={c.address} className="flex items-center gap-2 rounded-xl border border-white/[0.07] p-2">
-                    <Avatar size={24} seed={c.address} emoji={c.emoji} tone={c.tone} />
+                    <Avatar size={24} seed={c.address} emoji={c.emoji} tone={c.tone} photo={c.photo} />
                     <span className="flex-1 min-w-0 truncate text-[12.5px]">{c.name}</span>
                     <Button size="sm" onClick={() => void copy(message, c.address)}>{copied === c.address ? <Check size={13} /> : <Copy size={13} />} {copied === c.address ? L(vi, 'Copied', 'Đã chép') : L(vi, 'Copy', 'Chép')}</Button>
                   </div>
@@ -309,7 +309,7 @@ function PayAllCard({ vi }: { vi: boolean }) {
                 if (empty) update(empty.key, { to: c.address })
                 else if (rows.length < 20) setRows((old) => [...old, { key: rowKey(), to: c.address, amount: '' }])
               }} className="inline-flex items-center gap-1.5 h-8 pl-1.5 pr-2.5 rounded-full border border-white/[0.09] bg-white/[0.02] text-[12.5px] hover:bg-white/[0.06]">
-                <Avatar size={20} seed={c.address} emoji={c.emoji} tone={c.tone} /><span className="max-w-[110px] truncate">{c.name}</span>
+                <Avatar size={20} seed={c.address} emoji={c.emoji} tone={c.tone} photo={c.photo} /><span className="max-w-[110px] truncate">{c.name}</span>
               </button>
             ))}
           </div>

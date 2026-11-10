@@ -36,3 +36,38 @@ export function randomAvatar(): { emoji: string; tone: number } {
     tone: 1 + Math.floor(Math.random() * (AVATAR_TONES.length - 1)),
   }
 }
+
+const PHOTO_SIZE = 160
+const MAX_FILE_BYTES = 20 * 1024 * 1024
+
+/**
+ * Turn a picked image (PC file or phone camera/gallery) into a small square
+ * JPEG data URL (~10 KB) so it fits comfortably in local storage.
+ */
+export async function photoFromFile(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('NOT_IMAGE')
+  if (file.size > MAX_FILE_BYTES) throw new Error('TOO_BIG')
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('UNREADABLE'))
+      el.src = url
+    })
+    const side = Math.min(img.naturalWidth, img.naturalHeight)
+    if (!side) throw new Error('UNREADABLE')
+    const canvas = document.createElement('canvas')
+    canvas.width = PHOTO_SIZE
+    canvas.height = PHOTO_SIZE
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('UNREADABLE')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, PHOTO_SIZE, PHOTO_SIZE)
+    return canvas.toDataURL('image/jpeg', 0.85)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+export const isPhoto = (value?: string): value is string => !!value && value.startsWith('data:image/')

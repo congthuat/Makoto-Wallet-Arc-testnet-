@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Wallet, History, Sparkles, ArrowLeftRight, Rainbow, Settings, HelpCircle, MessageSquareText,
-  Search, Copy, ListChecks, PieChart, Eye, EyeOff, ArrowUpRight, ArrowDownLeft, Menu, X, Bell, Check, Home, LogOut, Droplets, Globe, ChevronDown, Sun, Moon, EyeOff as EyeOffIcon, Info, Command, AlertTriangle, Plus, Coins, ExternalLink, ReceiptText, ShieldCheck, Gift, Users, BookUser,
+  Wallet, History, Sparkles, ArrowLeftRight, Settings, HelpCircle, MessageSquareText,
+  Search, Copy, ListChecks, PieChart, Eye, EyeOff, ArrowUpRight, ArrowDownLeft, Menu, X, Bell, Check, Home, LogOut, Droplets, Globe, ChevronDown, Sun, Moon, EyeOff as EyeOffIcon, Info, Command, AlertTriangle, Plus, Coins, ExternalLink, ReceiptText, ShieldCheck, Gift, BookUser,
 } from 'lucide-react'
 import { WalletProvider, useWallet, type Page } from './lib/store'
 import { useT, LANGS, setLang } from './lib/i18n'
@@ -42,6 +42,7 @@ const LegalPage = lazy(() => import('./pages/Product').then((m) => ({ default: m
 const ChangelogPage = lazy(() => import('./pages/Product').then((m) => ({ default: m.ChangelogPage })))
 const StatusPage = lazy(() => import('./pages/Product').then((m) => ({ default: m.StatusPage })))
 import CommandPalette from './components/CommandPalette'
+import { HubTabs, hubOf } from './components/FeatureHub'
 import FloatingAgent from './components/FloatingAgent'
 import { EmbeddedApproval } from './components/wallet/EmbeddedApproval'
 import { WcPendingSheet } from './components/wallet/WcPendingSheet'
@@ -58,11 +59,8 @@ const NAV: { group: string; items: { id: SidebarDestination; icon: any; label: s
     { id: 'send', icon: ArrowUpRight, label: 'Send' },
     { id: 'receive', icon: ArrowDownLeft, label: 'Receive' },
     { id: 'contacts', icon: BookUser, label: 'Contacts' },
-    { id: 'pay', icon: ReceiptText, label: 'Payment requests' },
-    { id: 'split', icon: Users, label: 'Split a bill' },
-    { id: 'gifts', icon: Gift, label: 'Gift links' },
-    { id: 'swap', icon: ArrowLeftRight, label: 'Swap' },
-    { id: 'bridge', icon: Rainbow, label: 'Bridge' },
+    { id: 'pay', icon: ReceiptText, label: 'Payment tools' },
+    { id: 'swap', icon: ArrowLeftRight, label: 'Swap & Bridge' },
   ] },
   { group: 'WALLET', items: [
     { id: 'dashboard', icon: PieChart, label: 'Portfolio' },
@@ -109,7 +107,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [tr] = useT()
   const cls = (active: boolean) => `mk-nav ${active ? 'mk-nav-active' : ''} group relative w-full flex items-center gap-3 h-9 px-3 rounded-lg text-[13.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-400/70 ${active ? 'bg-white/[0.06] text-white' : `${T.sub} hover:bg-white/[0.03] hover:text-white`}`
   const Item = ({ id, icon: Icon, label }: { id: SidebarDestination; icon: any; label: string }) => {
-    const active = id === 'receive' ? receiveOpen : !receiveOpen && page === id
+    const active = id === 'receive' ? receiveOpen : !receiveOpen && (page === id || (hubOf(id)?.tabs.some((t) => t.id === page) ?? false))
     return (
       <button data-nav-id={id} aria-pressed={id === 'receive' ? receiveOpen : undefined} aria-current={id !== 'receive' && active ? 'page' : undefined}
         onClick={() => { if (id === 'receive') setReceiveOpen(true); else go(id); onNavigate?.() }} className={cls(active)}>
@@ -360,11 +358,8 @@ function MobileTabBar() {
     { icon: ArrowUpRight, label: 'Send', on: () => go('send') },
     { icon: ArrowDownLeft, label: 'Receive', on: () => setReceiveOpen(true) },
     { icon: BookUser, label: 'Contacts', on: () => go('contacts') },
-    { icon: ArrowLeftRight, label: 'Swap', on: () => go('swap') },
-    { icon: Rainbow, label: 'Bridge', on: () => go('bridge') },
-    { icon: ReceiptText, label: 'Payment requests', on: () => go('pay') },
-    { icon: Users, label: 'Split a bill', on: () => go('split') },
-    { icon: Gift, label: 'Gift links', on: () => go('gifts') },
+    { icon: ReceiptText, label: 'Payment tools', on: () => go('pay') },
+    { icon: ArrowLeftRight, label: 'Swap & Bridge', on: () => go('swap') },
     { icon: ListChecks, label: 'Tasks', on: () => go('tasks') },
     { icon: ShieldCheck, label: 'Trust Center', on: () => go('trust') },
     { icon: Droplets, label: 'Get test tokens', on: () => go('faucet') },
@@ -458,6 +453,7 @@ function Shell() {
   }, [w.page])
   useEffect(() => installCardSpotlight(), [])
   useEffect(() => staggerCards(document.getElementById('mk-main')), [w.page])
+  const hub = hubOf(w.page)
   const pages: Record<Page, React.ReactNode> = {
     home: <HomePage />, agent: <AgentPage />, tasks: <TasksPage />, dashboard: <Dashboard />, assets: <AssetsPage />, activity: <ActivityPage />,
     send: <SendPage />, swap: <SwapPage />, bridge: <BridgePage />, settings: <SettingsPage />, insights: <InsightsPage />, audit: <AuditPage />, faucet: <FaucetPage />, pay: <PayRequestsPage />, split: <SplitPage />, contacts: <ContactsPage />, gifts: <GiftsPage />,
@@ -495,6 +491,7 @@ function Shell() {
           </div>
         )}
         <main id="mk-main" tabIndex={-1} key={w.page} className="outline-none max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-7 pb-28 lg:pb-10">
+          {hub && <HubTabs hub={hub} />}
           <Suspense fallback={<PageSkeleton />}>{pages[w.page]}</Suspense>
           <footer className={`mt-12 pt-6 border-t border-white/[0.05] text-[12px] ${T.mute}`}>
             <div className="flex flex-wrap items-center justify-between gap-3">

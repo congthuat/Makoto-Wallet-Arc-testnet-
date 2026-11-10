@@ -42,7 +42,7 @@ export default function ContactsPage() {
   }, [activity, contacts])
 
   const openAdd = (address = '') => setEditing({ mode: 'add', name: '', address, avatar: randomAvatar() })
-  const openEdit = (c: Contact) => setEditing({ mode: 'edit', original: c.address, name: c.name, address: c.address, avatar: { emoji: c.emoji, tone: c.tone } })
+  const openEdit = (c: Contact) => setEditing({ mode: 'edit', original: c.address, name: c.name, address: c.address, avatar: { emoji: c.emoji, tone: c.tone, photo: c.photo } })
 
   const sendTo = (c: Contact) => { setSendDraft({ to: c.address }); go('send') }
   const remove = (c: Contact) => {
@@ -70,7 +70,7 @@ export default function ContactsPage() {
             </div>
             <div className="flex items-center gap-2">
               <div className="flex -space-x-2">
-                {contacts.slice(-5).reverse().map((c) => <span key={c.address} className="rounded-full ring-2 ring-[#0b0b10]"><Avatar size={28} seed={c.address} emoji={c.emoji} tone={c.tone} /></span>)}
+                {contacts.slice(-5).reverse().map((c) => <span key={c.address} className="rounded-full ring-2 ring-[#0b0b10]"><Avatar size={28} seed={c.address} emoji={c.emoji} tone={c.tone} photo={c.photo} /></span>)}
               </div>
               <span className={`text-[13px] ${T.sub}`}>{tr('{n} saved').replace('{n}', String(contacts.length))}</span>
             </div>
@@ -110,7 +110,7 @@ export default function ContactsPage() {
                 <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-[0.12] blur-2xl pointer-events-none" style={{ background: c.emoji ? 'radial-gradient(closest-side,#D4FF3A,transparent)' : 'radial-gradient(closest-side,#8b5cf6,transparent)' }} aria-hidden />
                 <div className="relative flex items-center gap-3">
                   <button type="button" onClick={() => setPicking(c)} className="mk-contact-av-btn relative rounded-full focus:outline-none" aria-label={tr('Change avatar')} title={tr('Change avatar')}>
-                    <span className="mk-contact-av block"><Avatar size={52} seed={c.address} emoji={c.emoji} tone={c.tone} /></span>
+                    <span className="mk-contact-av block"><Avatar size={52} seed={c.address} emoji={c.emoji} tone={c.tone} photo={c.photo} /></span>
                     <span className="mk-contact-edit absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-neon-500 text-[#0b0b10] flex items-center justify-center shadow-lg"><Pencil size={10} strokeWidth={2.6} /></span>
                   </button>
                   <div className="min-w-0 flex-1">
@@ -158,8 +158,8 @@ export default function ContactsPage() {
         onClose={() => setPicking(null)}
         name={picking?.name ?? ''}
         seed={picking?.address ?? ''}
-        value={{ emoji: picking?.emoji, tone: picking?.tone }}
-        onSave={(v) => { if (picking) setContacts(contacts.map((x) => (same(x.address, picking.address) ? { ...x, emoji: v.emoji, tone: v.tone } : x))) }}
+        value={{ emoji: picking?.emoji, tone: picking?.tone, photo: picking?.photo }}
+        onSave={(v) => { if (picking) setContacts(contacts.map((x) => (same(x.address, picking.address) ? { ...x, emoji: v.emoji, tone: v.tone, photo: v.photo } : x))) }}
       />
     </>
   )
@@ -185,7 +185,7 @@ function ContactEditor({ editing, onClose, contacts, onSave }: {
       <div className="flex items-center gap-4 mb-4">
         <button type="button" onClick={() => setShowGrid((v) => !v)} className="group relative rounded-full focus:outline-none" aria-label={tr('Choose avatar')}>
           <div className="absolute inset-0 rounded-full bg-neon-400/20 blur-xl mk-breathe" aria-hidden />
-          <div key={`${draft.avatar.emoji}-${draft.avatar.tone}`} className="relative mk-pop transition-transform group-hover:scale-105"><Avatar size={64} seed={addr || 'makoto'} emoji={draft.avatar.emoji} tone={draft.avatar.tone} /></div>
+          <div key={`${draft.avatar.emoji}-${draft.avatar.tone}-${draft.avatar.photo?.length ?? 0}`} className="relative mk-pop transition-transform group-hover:scale-105"><Avatar size={64} seed={addr || 'makoto'} emoji={draft.avatar.emoji} tone={draft.avatar.tone} photo={draft.avatar.photo} /></div>
           <span className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-neon-500 text-[#0b0b10] flex items-center justify-center shadow-lg"><Pencil size={11} strokeWidth={2.6} /></span>
         </button>
         <div className="min-w-0">
@@ -207,7 +207,7 @@ function ContactEditor({ editing, onClose, contacts, onSave }: {
 
       <div className="grid grid-cols-2 gap-2 mt-5">
         <Button onClick={onClose}>{tr('Cancel')}</Button>
-        <Button variant="primary" disabled={!ok} onClick={() => onSave({ name: draft.name.trim(), address: addr, emoji: draft.avatar.emoji, tone: draft.avatar.tone }, draft.original)}>
+        <Button variant="primary" disabled={!ok} onClick={() => onSave({ name: draft.name.trim(), address: addr, emoji: draft.avatar.emoji, tone: draft.avatar.tone, photo: draft.avatar.photo }, draft.original)}>
           <Check size={15} />{tr('Save contact')}
         </Button>
       </div>

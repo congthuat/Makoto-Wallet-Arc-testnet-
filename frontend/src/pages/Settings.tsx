@@ -98,7 +98,7 @@ export default function SettingsPage() {
 
         <Section title="Address book">
           <Row icon={BookUser} title="Contacts"
-            desc={<span className="inline-flex items-center gap-2">{contacts.length > 0 && <span className="flex -space-x-1.5">{contacts.slice(-4).map((c) => <span key={c.address} className="rounded-full ring-2 ring-[#121219]"><Avatar size={20} seed={c.address} emoji={c.emoji} tone={c.tone} /></span>)}</span>}{tr('{n} saved').replace('{n}', String(contacts.length))}</span>}
+            desc={<span className="inline-flex items-center gap-2">{contacts.length > 0 && <span className="flex -space-x-1.5">{contacts.slice(-4).map((c) => <span key={c.address} className="rounded-full ring-2 ring-[#121219]"><Avatar size={20} seed={c.address} emoji={c.emoji} tone={c.tone} photo={c.photo} /></span>)}</span>}{tr('{n} saved').replace('{n}', String(contacts.length))}</span>}
             right={<Button size="sm" onClick={() => go('contacts')}>{tr('Open')}</Button>} />
         </Section>
 

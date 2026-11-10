@@ -2,7 +2,7 @@ import { useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { FlaskConical, X } from 'lucide-react'
 import { useT } from '../../lib/i18n'
-import { toneOf } from '../../lib/contactAvatars'
+import { isPhoto, toneOf } from '../../lib/contactAvatars'
 
 export const T = { text: 'text-[#F5F5F5]', sub: 'text-[#A3A3AD]', mute: 'text-[#83838E]' } // dark values refined in index.css (Makoto Pro layer)
 
@@ -70,7 +70,10 @@ export function TokenIcon({ color, glyph, size = 36 }: { color: string; glyph: s
 }
 
 // Deterministic gradient avatar from an address
-export function Avatar({ size = 24, seed = 'makoto', emoji, tone }: { size?: number; seed?: string; emoji?: string; tone?: number }) {
+export function Avatar({ size = 24, seed = 'makoto', emoji, tone, photo }: { size?: number; seed?: string; emoji?: string; tone?: number; photo?: string }) {
+  if (isPhoto(photo)) {
+    return <img src={photo} alt="" draggable={false} className="rounded-full shrink-0 object-cover" style={{ width: size, height: size, boxShadow: `0 0 0 2px ${toneOf(tone).ring}` }} aria-hidden />
+  }
   if (emoji) {
     const t = toneOf(tone)
     return <span className="rounded-full shrink-0 inline-flex items-center justify-center" style={{ width: size, height: size, fontSize: Math.round(size * 0.56), lineHeight: 1, background: t.bg, boxShadow: `0 0 0 2px ${t.ring}` }} aria-hidden>{emoji}</span>
