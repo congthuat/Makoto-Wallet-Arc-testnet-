@@ -57,6 +57,13 @@ export function cleanMemo(note: string): string {
   return out.trim()
 }
 
+/** While typing: keep spaces as typed, only stop at the byte limit. */
+export function limitMemoInput(note: string): string {
+  let out = note.replace(/[\r\n]+/g, ' ')
+  while (memoBytes(out) > MAX_MEMO_BYTES && out.length > 0) out = out.slice(0, -1)
+  return out
+}
+
 /** Wrap an inner call so the note travels with it, on-chain. */
 export function memoCall(target: Address, data: Hex, note: string): Hex {
   const text = cleanMemo(note)

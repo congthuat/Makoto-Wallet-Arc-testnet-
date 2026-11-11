@@ -13,7 +13,7 @@ import type { BrainPreparation, BrainReviewSnapshot } from '../brain/types'
 import { SendSubmissionGuard, assertFreshSend, feeInUsdcUnits, formatSendAmount, isWalletRejection, parseSendAmount, pollSendReceipt, prepareSend, requestSend, safeMax, type PreparedSend, type SendStatus } from '../lib/sendExecution'
 import { explorerTx } from '../lib/wallet'
 import { SuccessBurst } from '../components/wallet/SuccessBurst'
-import { MAX_MEMO_BYTES, cleanMemo, memoBytes } from '../lib/arcMemo'
+import { MAX_MEMO_BYTES, cleanMemo, limitMemoInput, memoBytes } from '../lib/arcMemo'
 
 type Stage = 'form' | 'review' | 'preview' | 'result'
 const PREVIEW_STATES = ['Prepared', 'Wallet signature', 'Submitted', 'Confirming', 'Completed', 'Failed'] as const
@@ -374,7 +374,7 @@ export default function SendPage() {
               >
                 <input
                   value={note}
-                  onChange={(e) => { setNote(cleanMemo(e.target.value)); setPrepared(null) }}
+                  onChange={(e) => { setNote(limitMemoInput(e.target.value)); setPrepared(null) }}
                   placeholder={tr('e.g. Lunch on Saturday')}
                   maxLength={200}
                   className={`${inputCls} text-[13px]`}
@@ -413,7 +413,7 @@ export default function SendPage() {
                 <div className="flex justify-between px-4 py-3"><dt className={T.mute}>{tr('Asset')}</dt><dd>{meta.name} ({symbol})</dd></div>
                 <div className="flex justify-between gap-3 px-4 py-3"><dt className={T.mute}>{tr('Amount')}</dt><dd className="font-num text-right break-words min-w-0">{amount} {symbol}{usdValue != null ? ` · ≈ ${usd(usdValue)}` : ''}</dd></div>
                 <div className="flex justify-between px-4 py-3"><dt className={T.mute}>{tr('Network')}</dt><dd>{ARC.name}</dd></div>
-                {note && <div className="flex justify-between gap-3 px-4 py-3"><dt className={`${T.mute} shrink-0`}>{tr('Note')}</dt><dd className="text-right min-w-0">“{note}”</dd></div>}
+                {cleanMemo(note) && <div className="flex justify-between gap-3 px-4 py-3"><dt className={`${T.mute} shrink-0`}>{tr('Note')}</dt><dd className="text-right min-w-0">“{cleanMemo(note)}”</dd></div>}
                 <div className="flex justify-between gap-3 px-4 py-3"><dt className={T.mute}>{s(mode === 'connected' ? 'Maximum fee' : 'Estimated fee')}</dt><dd className="tabular-nums text-right">{feeLabel ?? s('Unavailable')}</dd></div>
                 <div className="flex justify-between gap-3 px-4 py-3 font-semibold"><dt>{s('Total')}</dt><dd className="tabular-nums text-right break-words min-w-0">{totalLabel ?? s('Unavailable')}</dd></div>
               </dl>

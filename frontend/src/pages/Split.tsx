@@ -6,7 +6,7 @@ import { useT } from '../lib/i18n'
 import { TOKENS, getProvider, isAddress, short } from '../lib/wallet'
 import { Avatar, Badge, Button, Card, Field, PageHeader, T, inputCls } from '../components/wallet/ui'
 import { encodeTransfer, formatSendAmount, parseSendAmount } from '../lib/sendExecution'
-import { ARC_BATCH_ADDRESS, ARC_MEMO_ADDRESS, MAX_MEMO_BYTES, batchCallData, cleanMemo, memoBytes, memoCall } from '../lib/arcMemo'
+import { ARC_BATCH_ADDRESS, ARC_MEMO_ADDRESS, MAX_MEMO_BYTES, batchCallData, cleanMemo, limitMemoInput, memoBytes, memoCall } from '../lib/arcMemo'
 import { configuredPayAddress, createData, createdRequestId, formatUnitsText, payLink, prepareTx, rememberMyRequest, sendPrepared, waitForReceipt } from '../lib/payRequests'
 import { TxPanel, useReviewedWrite } from './PayRequests'
 
@@ -147,7 +147,7 @@ function CollectCard({ vi }: { vi: boolean }) {
         )}
 
         <Field label={L(vi, 'Note for the group (optional)', 'Lời nhắn cho cả nhóm (không bắt buộc)')} right={<span className={`text-[11.5px] tabular-nums ${memoBytes(note) > MAX_MEMO_BYTES ? 'text-rose-300' : T.mute}`}>{memoBytes(note)}/{MAX_MEMO_BYTES}</span>}>
-          <input value={note} onChange={(e) => setNote(cleanMemo(e.target.value))} placeholder={L(vi, 'e.g. Dinner on Saturday', 'ví dụ: Ăn tối thứ Bảy')} className={`${inputCls} text-[13px]`} />
+          <input value={note} onChange={(e) => setNote(limitMemoInput(e.target.value))} placeholder={L(vi, 'e.g. Dinner on Saturday', 'ví dụ: Ăn tối thứ Bảy')} className={`${inputCls} text-[13px]`} />
         </Field>
 
         {!contract && <p className="text-[12.5px] text-amber-200/90">{L(vi, 'The payment-request contract is not deployed on this device yet. Open Payment requests to deploy it once.', 'Hợp đồng yêu cầu thanh toán chưa được deploy trên thiết bị này. Mở trang Yêu cầu thanh toán để deploy một lần.')}</p>}
@@ -316,7 +316,7 @@ function PayAllCard({ vi }: { vi: boolean }) {
         )}
 
         <Field label={L(vi, 'Note (optional)', 'Ghi chú (không bắt buộc)')} right={<span className={`text-[11.5px] tabular-nums ${memoBytes(note) > MAX_MEMO_BYTES ? 'text-rose-300' : T.mute}`}>{memoBytes(note)}/{MAX_MEMO_BYTES}</span>}>
-          <input value={note} onChange={(e) => setNote(cleanMemo(e.target.value))} placeholder={L(vi, 'e.g. Team lunch', 'ví dụ: Ăn trưa nhóm')} className={`${inputCls} text-[13px]`} />
+          <input value={note} onChange={(e) => setNote(limitMemoInput(e.target.value))} placeholder={L(vi, 'e.g. Team lunch', 'ví dụ: Ăn trưa nhóm')} className={`${inputCls} text-[13px]`} />
         </Field>
 
         {overBalance && <p className="text-[12.5px] text-rose-300">{L(vi, `Not enough USDC. Balance: ${usdcBalance.toFixed(6)}.`, `Không đủ USDC. Số dư: ${usdcBalance.toFixed(6)}.`)}</p>}
