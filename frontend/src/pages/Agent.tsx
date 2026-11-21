@@ -326,7 +326,7 @@ function PreSignSummary({ flow }: { flow: Flow }) {
   const text = flow.intent === 'send'
     ? (vi ? `Bạn sắp gửi ${p.amount} ${p.asset} cho ${who} trên Arc Testnet.${fee} Giao dịch blockchain không thể hoàn tác.` : `You are about to send ${p.amount} ${p.asset} to ${who} on Arc Testnet.${fee} Blockchain transfers cannot be reversed.`)
     : flow.intent === 'swap'
-      ? (vi ? `Bạn sắp đổi ${p.amount} ${p.asset} sang ${p.toAsset} trên Arc ${p.venue && p.venue !== 'best' ? `qua ${VENUE_LABEL[p.venue]}` : '(tự chọn sàn giá tốt nhất: XyloNet hoặc Uniswap)'}. Số nhận cuối cùng theo báo giá trực tiếp và mức trượt giá bạn chọn.` : `You are about to swap ${p.amount} ${p.asset} to ${p.toAsset} on Arc ${p.venue && p.venue !== 'best' ? `via ${VENUE_LABEL[p.venue]}` : '(best price of XyloNet or Uniswap)'}. The final amount follows the live quote and your slippage.`)
+      ? (vi ? `Bạn sắp đổi ${p.amount} ${p.asset} sang ${p.toAsset} trên Arc ${p.venue && p.venue !== 'best' ? `qua ${VENUE_LABEL[p.venue]}` : '(tự chọn sàn giá tốt nhất: XyloNet, Uniswap, Curve hoặc Arc Swap)'}. Số nhận cuối cùng theo báo giá trực tiếp và mức trượt giá bạn chọn.` : `You are about to swap ${p.amount} ${p.asset} to ${p.toAsset} on Arc ${p.venue && p.venue !== 'best' ? `via ${VENUE_LABEL[p.venue]}` : '(best price of XyloNet, Uniswap, Curve or Arc Swap)'}. The final amount follows the live quote and your slippage.`)
       : (vi ? `Bạn sắp chuyển ${p.amount} USDC từ Arc Testnet sang Base Sepolia qua Circle CCTP. Có thể cần 2 lần ký (phê duyệt và chuyển); tiền tới đích sau khi Circle xác nhận.` : `You are about to bridge ${p.amount} USDC from Arc Testnet to Base Sepolia via Circle CCTP. It may need 2 signatures (approval and transfer); funds arrive after Circle confirms.`)
   return <p data-presign-summary className="rounded-lg border border-neon-500/20 bg-neon-500/[0.05] px-3 py-2 text-[12.5px] leading-relaxed">{text}</p>
 }
@@ -392,6 +392,8 @@ function ReviewCard({ msg, onChange, onSlipChange, onSpeedChange, onConfirm, onC
             <option value="best" className="bg-[#17171d]">{tr('Best price')}</option>
             <option value="xylonet" className="bg-[#17171d]">{VENUE_LABEL.xylonet}</option>
             <option value="uniswap" className="bg-[#17171d]">{VENUE_LABEL.uniswap}</option>
+            <option value="curve" className="bg-[#17171d]">{VENUE_LABEL.curve}</option>
+            <option value="arcswap" className="bg-[#17171d]">{VENUE_LABEL.arcswap}</option>
           </select>
         </>}
         {f.intent === 'bridge' && <>
@@ -433,7 +435,7 @@ function ReviewCard({ msg, onChange, onSlipChange, onSpeedChange, onConfirm, onC
                 {tr(f.intent === 'send'
                   ? 'Live review, then confirm transfer in your wallet — right here.'
                   : f.intent === 'swap'
-                    ? 'Live quote (XyloNet or Uniswap), review, then confirm each step in your wallet — right here.'
+                    ? 'Live quotes from 4 venues, review, then confirm each step in your wallet — right here.'
                     : 'Live Circle quote, separate approval and burn confirmations — right here.')}
               </p>
               {/* Slippage selector (Swap only) — changing invalidates any mounted quote */}

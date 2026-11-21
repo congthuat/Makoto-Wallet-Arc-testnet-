@@ -6,7 +6,8 @@ import { rpcRead } from '../lib/arcRpc.ts'
 import { getAssetById, type SupportedAssetId } from './assets.ts'
 import { CCTP_KIT_BRIDGE_TESTNET } from './cctp.ts'
 import { createXyloQuote, minimumSwapOutput, prepareXyloSwapRequest, SWAP_DEADLINE_SECONDS, SWAP_QUOTE_MAX_AGE_MS, XYLO_ROUTER, xyloRouterAbi, type SwapQuote } from './swap.ts'
-import { buildUniswapSwapCalldata, createUniswapQuote, PERMIT2, PERMIT2_EXPIRY_SECONDS, permit2Abi, permit2ApproveCalldata, quoterAbi, UNI_QUOTER, UNI_ROUTER, uniswapQuoteCall, type SwapVenue } from './uniswap.ts'
+import { buildUniswapSwapCalldata, createVenueQuote, PERMIT2, PERMIT2_EXPIRY_SECONDS, permit2Abi, permit2ApproveCalldata, quoterAbi, UNI_POOL_MANAGER, UNI_QUOTER, UNI_ROUTER, uniswapQuoteCall, type SwapVenue } from './uniswap.ts'
+import { ARCSWAP_PAIR, ARCSWAP_ROUTER, arcSwapCalldata, arcSwapQuoteCall, CURVE_POOLS, curvePoolAbi, curveQuoteCall, curveSwapCalldata, v2RouterAbi } from './dexVenues.ts'
 import { getOfficialCctpQuote, prepareExactCctpApproval, prepareOfficialCctpBurn, type CctpAdapterDependencies } from '../protocols/circle/cctpAdapter.ts'
 
 /** Adapted from donor agent read/quote/prepare contracts. Results contain data, never a provider or signer. */
@@ -34,14 +35,16 @@ export type CctpIntentSemantics = Readonly<{
   finalityThreshold?: bigint
 }>
 export type PreparedGasEstimate = Readonly<{ gasLimit: bigint; unitPrice: bigint; maximumFee: bigint }>
-export type SwapProvider = 'XyloNet StableSwap' | 'Uniswap v4'
+export type SwapProvider = 'XyloNet StableSwap' | 'Uniswap v4' | 'Curve StableSwap' | 'Arc Swap (Uniswap V2)'
 /** For Uniswap, `allowance` is the effective amount usable by the router (token→Permit2 and Permit2→router). */
 export type SwapToolQuote = Readonly<{ quote: SwapQuote; account: Address; balance: bigint; allowance: bigint; minimumReceive: bigint; slippage: 0.005 | 0.01 | 0.03; expiresAt: number; provider: SwapProvider; venue: SwapVenue; tokenAllowance: bigint; permit2Allowance?: bigint }>
 export type SwapApprovalStep = Readonly<{ kind: 'erc20' | 'permit2'; spender: Address }>
-export const swapProvider = (venue: SwapVenue): SwapProvider => venue === 'uniswap' ? 'Uniswap v4' : 'XyloNet StableSwap'
+export const swapProvider = (venue: SwapVenue): SwapProvider => venue === 'uniswap' ? 'Uniswap v4' : venue === 'curve' ? 'Curve StableSwap' : venue === 'arcswap' ? 'Arc Swap (Uniswap V2)' : 'XyloNet StableSwap'
+/** Contracts a swap may target / an ERC20 approval may name, per venue. Curve's target is the quoted pool. */
+export const SWAP_ROUTE_TARGETS: readonly Address[] = [XYLO_ROUTER, UNI_ROUTER, ARCSWAP_ROUTER, ...CURVE_POOLS]
 /** The first missing approval for a quoted swap, or undefined when the swap can be prepared. */
 export function nextSwapApproval(q: SwapToolQuote): SwapApprovalStep | undefined {
-  if (q.venue === 'xylonet') return q.tokenAllowance < q.quote.amountIn ? { kind: 'erc20', spender: XYLO_ROUTER } : undefined
+  if (q.venue !== 'uniswap') return q.tokenAllowance < q.quote.amountIn ? { kind: 'erc20', spender: q.quote.router } : undefined
   if (q.tokenAllowance < q.quote.amountIn) return { kind: 'erc20', spender: PERMIT2 }
   if ((q.permit2Allowance ?? 0n) < q.quote.amountIn) return { kind: 'permit2', spender: UNI_ROUTER }
   return undefined
@@ -235,20 +238,37 @@ export async function readStepAllowance(p: SendProvider, symbol: string, spender
 
 export const parseSendAmountSafe = (value: string, decimals: number): bigint | undefined => { try { return parseSendAmount(value, decimals) } catch { return undefined } }
 
-/** Read-only output quote for one venue; no balance or wallet needed. */
-export async function quoteVenueOutput(p: SendProvider, venue: SwapVenue, fromSymbol: 'USDC' | 'EURC', toSymbol: 'USDC' | 'EURC', amount: bigint): Promise<bigint> {
+/** Read-only output quote for one venue; no balance or wallet needed. `router` is the contract the swap would call. */
+export async function quoteVenueRoute(p: SendProvider, venue: SwapVenue, fromSymbol: 'USDC' | 'EURC', toSymbol: 'USDC' | 'EURC', amount: bigint): Promise<{ out: bigint; router: Address; pool: Address }> {
   const from = getAssetById(fromSymbol.toLowerCase() as SupportedAssetId)!
   const to = getAssetById(toSymbol.toLowerCase() as SupportedAssetId)!
-  if (venue === 'uniswap') {
-    const raw = await req(p, 'eth_call', [{ to: UNI_QUOTER, data: uniswapQuoteCall(address(from.address), address(to.address), amount) }, 'latest'])
-    if (typeof raw !== 'string' || !raw.startsWith('0x') || raw === '0x') throw new Error('Uniswap quote unavailable')
-    const [out] = decodeFunctionResult({ abi: quoterAbi, functionName: 'quoteExactInputSingle', data: raw as Hex }) as readonly [bigint, bigint]
-    return out
+  const tokenIn = address(from.address); const tokenOut = address(to.address)
+  const call = async (target: Address, data: Hex) => {
+    const raw = await req(p, 'eth_call', [{ to: target, data }, 'latest'])
+    if (typeof raw !== 'string' || !raw.startsWith('0x') || raw === '0x') throw new Error('Swap quote unavailable')
+    return raw as Hex
   }
-  const raw = await req(p, 'eth_call', [{ to: XYLO_ROUTER, data: encodeFunctionData({ abi: xyloRouterAbi, functionName: 'getAmountOut', args: [from.address, to.address, amount] }) }, 'latest'])
-  if (typeof raw !== 'string' || !raw.startsWith('0x')) throw new Error('Swap quote unavailable')
-  return decodeFunctionResult({ abi: xyloRouterAbi, functionName: 'getAmountOut', data: raw as Hex }) as bigint
+  if (venue === 'uniswap') {
+    const [out] = decodeFunctionResult({ abi: quoterAbi, functionName: 'quoteExactInputSingle', data: await call(UNI_QUOTER, uniswapQuoteCall(tokenIn, tokenOut, amount)) }) as readonly [bigint, bigint]
+    return { out, router: UNI_ROUTER, pool: UNI_POOL_MANAGER }
+  }
+  if (venue === 'curve') {
+    const quotes = await Promise.all(CURVE_POOLS.map(async (pool) => {
+      try { return { out: decodeFunctionResult({ abi: curvePoolAbi, functionName: 'get_dy', data: await call(pool, curveQuoteCall(pool, tokenIn, tokenOut, amount)) }) as bigint, router: pool, pool } }
+      catch { return undefined }
+    }))
+    const best = quotes.filter((q): q is NonNullable<typeof q> => !!q && q.out > 0n).sort((a, b) => (b.out > a.out ? 1 : b.out < a.out ? -1 : 0))[0]
+    if (!best) throw new Error('Curve quote unavailable')
+    return best
+  }
+  if (venue === 'arcswap') {
+    const amounts = decodeFunctionResult({ abi: v2RouterAbi, functionName: 'getAmountsOut', data: await call(ARCSWAP_ROUTER, arcSwapQuoteCall(tokenIn, tokenOut, amount)) }) as readonly bigint[]
+    return { out: amounts[amounts.length - 1] ?? 0n, router: ARCSWAP_ROUTER, pool: ARCSWAP_PAIR }
+  }
+  const out = decodeFunctionResult({ abi: xyloRouterAbi, functionName: 'getAmountOut', data: await call(XYLO_ROUTER, encodeFunctionData({ abi: xyloRouterAbi, functionName: 'getAmountOut', args: [from.address, to.address, amount] })) }) as bigint
+  return { out, router: XYLO_ROUTER, pool: XYLO_ROUTER }
 }
+export const quoteVenueOutput = async (p: SendProvider, venue: SwapVenue, fromSymbol: 'USDC' | 'EURC', toSymbol: 'USDC' | 'EURC', amount: bigint) => (await quoteVenueRoute(p, venue, fromSymbol, toSymbol, amount)).out
 
 export async function quoteSwap(p: SendProvider, input: { account: string; from: 'USDC' | 'EURC'; to: 'USDC' | 'EURC'; amount: string; slippage: 0.005 | 0.01 | 0.03; venue?: SwapVenue }, now = Date.now()): Promise<ToolResult<SwapToolQuote>> {
   const venue: SwapVenue = input.venue ?? 'xylonet'
@@ -259,13 +279,14 @@ export async function quoteSwap(p: SendProvider, input: { account: string; from:
     const from = getAssetById(input.from.toLowerCase() as SupportedAssetId)!
     const to = getAssetById(input.to.toLowerCase() as SupportedAssetId)!
     const amount = parseSendAmount(input.amount, from.decimals)
-    const router = venue === 'uniswap' ? UNI_ROUTER : XYLO_ROUTER
-    const tokenSpender = venue === 'uniswap' ? PERMIT2 : XYLO_ROUTER
+    const route = await quoteVenueRoute(p, venue, input.from, input.to, amount)
+    const router = route.router
+    const tokenSpender = venue === 'uniswap' ? PERMIT2 : router
     const [routerCode, balance, allowance, permit2] = await Promise.all([req(p, 'eth_getCode', [router, 'latest']), readBalance(p, input.from, wallet.account), readAllowance(p, input.from, tokenSpender, wallet.account), venue === 'uniswap' ? readPermit2Allowance(p, input.from, wallet.account) : Promise.resolve(undefined)])
     if (routerCode === '0x' || balance.status !== 'OK' || allowance.status !== 'OK' || !balance.data || !allowance.data || (permit2 && (permit2.status !== 'OK' || permit2.data === undefined))) throw new Error('Swap evidence unavailable')
     if (balance.data.units < amount) throw new Error('Insufficient balance')
-    const out = await quoteVenueOutput(p, venue, input.from, input.to, amount)
-    const quote = venue === 'uniswap' ? createUniswapQuote(from.id as 'usdc' | 'eurc', to.id as 'usdc' | 'eurc', amount, out, now) : createXyloQuote(from.id, to.id, amount, out, now)
+    const out = route.out
+    const quote = venue === 'xylonet' ? createXyloQuote(from.id, to.id, amount, out, now) : createVenueQuote(from.id as 'usdc' | 'eurc', to.id as 'usdc' | 'eurc', amount, out, router, route.pool, now)
     const tokenAllowance = allowance.data.units
     const permit2Allowance = permit2?.data
     const effective = venue === 'uniswap' ? (tokenAllowance < (permit2Allowance ?? 0n) ? tokenAllowance : permit2Allowance ?? 0n) : tokenAllowance
@@ -303,7 +324,7 @@ export async function prepareApproval(p: SendProvider, input: { account: string;
   const wallet = await requireArc(p, input.account)
   const asset = TOKENS.find((item) => item.sym === input.symbol)!
   const spender = address(input.spender)
-  if (![XYLO_ROUTER, CCTP_KIT_BRIDGE_TESTNET, PERMIT2].some((item) => item.toLowerCase() === spender.toLowerCase())) throw new Error('Untrusted spender')
+  if (![...SWAP_ROUTE_TARGETS, CCTP_KIT_BRIDGE_TESTNET, PERMIT2].some((item) => item.toLowerCase() === spender.toLowerCase())) throw new Error('Untrusted spender')
   if (input.amount <= 0n || input.amount >= (1n << 256n) - 1n) throw new Error('Approval must be finite')
   const data = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [spender, input.amount] })
   const request = await boundRequest(p, wallet.account, address(asset.address), data)
@@ -323,11 +344,15 @@ export async function preparePermit2Approval(p: SendProvider, input: { account: 
 export async function prepareSwap(p: SendProvider, quoted: SwapToolQuote, now = Date.now()): Promise<PreparedToolAction> {
   const wallet = await requireArc(p, quoted.account)
   if (now > quoted.expiresAt || quoted.allowance < quoted.quote.amountIn || quoted.account !== wallet.account) throw new Error('Swap quote expired or approval required')
-  const uniswap = quoted.venue === 'uniswap'
-  const calldata = uniswap
-    ? buildUniswapSwapCalldata(quoted.quote, quoted.minimumReceive, BigInt(Math.floor(now / 1000) + SWAP_DEADLINE_SECONDS))
+  const deadline = BigInt(Math.floor(now / 1000) + SWAP_DEADLINE_SECONDS)
+  const tokenIn = address(getAssetById(quoted.quote.fromAssetId)!.address); const tokenOut = address(getAssetById(quoted.quote.toAssetId)!.address)
+  const target = quoted.venue === 'uniswap' ? UNI_ROUTER : quoted.venue === 'arcswap' ? ARCSWAP_ROUTER : quoted.venue === 'curve' ? quoted.quote.router : XYLO_ROUTER
+  if (quoted.venue === 'curve' && !CURVE_POOLS.some((pool) => pool === getAddress(target))) throw new Error('Untrusted Curve pool')
+  const calldata = quoted.venue === 'uniswap' ? buildUniswapSwapCalldata(quoted.quote, quoted.minimumReceive, deadline)
+    : quoted.venue === 'curve' ? curveSwapCalldata(getAddress(target), tokenIn, tokenOut, quoted.quote.amountIn, quoted.minimumReceive)
+    : quoted.venue === 'arcswap' ? arcSwapCalldata(tokenIn, tokenOut, quoted.quote.amountIn, quoted.minimumReceive, wallet.account, deadline)
     : prepareXyloSwapRequest(quoted.quote, quoted.slippage, wallet.account, now).calldata
-  const request = await boundRequest(p, wallet.account, uniswap ? UNI_ROUTER : XYLO_ROUTER, calldata)
+  const request = await boundRequest(p, wallet.account, getAddress(target), calldata)
   return Object.freeze({ kind: 'swap', account: wallet.account, chainId: wallet.chainId, request, preparedAt: now, expiresAt: Math.min(quoted.expiresAt, now + 60_000), quoteId: keccak256(stringToHex(`${quoted.venue}:${quoted.quote.quotedAt}:${quoted.quote.amountIn}:${quoted.quote.amountOut}:${quoted.minimumReceive}`)), executionEnabled: false })
 }
 

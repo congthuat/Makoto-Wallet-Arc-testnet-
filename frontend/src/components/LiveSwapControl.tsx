@@ -7,7 +7,7 @@ import { rpcRead } from '../lib/arcRpc.ts'
 import { isWalletRejection, pollProtocolReceipt, requestReviewedAction } from '../migrated/protocolExecution.ts'
 import { createReview, evaluateToolPolicy, revalidateReview, verifySwapApproval, type ReviewSnapshot } from '../migrated/policy.ts'
 import { nextSwapApproval, parseSendAmountSafe, prepareApproval, preparePermit2Approval, prepareSwap, quoteSwap, quoteVenueOutput, readBalance, readStepAllowance, readWallet, type PreparedToolAction, type SwapApprovalStep, type SwapToolQuote } from '../migrated/toolLayer.ts'
-import { VENUE_LABEL, venueGap, type SwapVenue, type SwapVenueChoice } from '../migrated/uniswap.ts'
+import { SWAP_VENUES, VENUE_LABEL, venueGap, type SwapVenue, type SwapVenueChoice } from '../migrated/uniswap.ts'
 import { Button, T } from './wallet/ui.tsx'
 import { SuccessBurst } from './wallet/SuccessBurst.tsx'
 import { useWallet } from '../lib/store.tsx'
@@ -192,13 +192,13 @@ export function LiveSwapControl({ account, from, to, amount, slip, venue: venueC
     // Read-only price check on both venues: picks "best" and powers the price-gap warning.
     const units = parseSendAmountSafe(amount, 6)
     const outputs: Compare = {}
-    if (units) await Promise.all((['xylonet', 'uniswap'] as const).map(async (v) => { try { outputs[v] = await quoteVenueOutput(p, v, from, to, units) } catch { /* venue unavailable */ } }))
+    if (units) await Promise.all(SWAP_VENUES.map(async (v) => { try { outputs[v] = await quoteVenueOutput(p, v, from, to, units) } catch { /* venue unavailable */ } }))
     requireCurrent(op)
     setCompare(outputs)
     let venue: SwapVenue
     if (venueChoice !== 'best') venue = venueChoice
     else if (resolvedVenue.current?.input === input) venue = resolvedVenue.current.venue
-    else venue = (outputs.uniswap ?? 0n) > (outputs.xylonet ?? 0n) ? 'uniswap' : 'xylonet'
+    else venue = SWAP_VENUES.reduce<SwapVenue>((best, v) => (outputs[v] ?? 0n) > (outputs[best] ?? 0n) ? v : best, 'xylonet')
     resolvedVenue.current = { input, venue }
     // quoteSwap re-reads verified allowance and balances; never reuse the pre-approval quote.
     const result = await quoteSwap(p, { account, from, to, amount, slippage: slipValue, venue })
@@ -381,18 +381,22 @@ export function LiveSwapControl({ account, from, to, amount, slip, venue: venueC
     onComplete()
   }
 
+  const quotedOutputs = SWAP_VENUES.filter((v) => compare[v] !== undefined && compare[v]! > 0n)
+  const bestVenue = quotedOutputs.reduce<SwapVenue | undefined>((best, v) => !best || compare[v]! > compare[best]! ? v : best, undefined)
+  const worstOut = quotedOutputs.reduce<bigint | undefined>((low, v) => low === undefined || compare[v]! < low ? compare[v]! : low, undefined)
+  const spread = bestVenue && worstOut !== undefined ? venueGap(compare[bestVenue]!, worstOut) : 0
   const completedActivity = Array.isArray(swapRecords) && swapRecords.some((record) => typeof record?.hash === 'string' && typeof record.account === 'string' && record.hash.toLowerCase() === hash?.toLowerCase() && record.account.toLowerCase() === normalizedAccount && record.status === 'completed')
   return <div className="mt-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5 text-[13px] space-y-3" aria-live="polite">
     <div className="font-semibold">{say('Live swap', 'Hoán đổi trực tiếp')} · {quote ? VENUE_LABEL[quote.venue] : venueChoice === 'best' ? say('best price', 'giá tốt nhất') : VENUE_LABEL[venueChoice]}</div>
-    {quote && (compare.xylonet !== undefined || compare.uniswap !== undefined) && <div className="grid grid-cols-2 gap-2">
-      {(['xylonet', 'uniswap'] as const).map((v) => <div key={v} className={`rounded-xl border px-2.5 py-1.5 ${quote.venue === v ? 'border-neon-400/60 bg-neon-500/10' : 'border-white/[0.08]'}`}>
-        <div className={`text-[11px] ${T.mute}`}>{VENUE_LABEL[v]}{quote.venue === v ? ` · ${say('selected', 'đang chọn')}` : ''}</div>
+    {quote && Object.keys(compare).length > 0 && <div className="grid grid-cols-2 gap-2">
+      {SWAP_VENUES.map((v) => <div key={v} className={`rounded-xl border px-2.5 py-1.5 ${quote.venue === v ? 'border-neon-400/60 bg-neon-500/10' : 'border-white/[0.08]'}`}>
+        <div className={`text-[11px] ${T.mute}`}>{VENUE_LABEL[v]}{quote.venue === v ? ` · ${say('selected', 'đang chọn')}` : bestVenue === v ? ` · ${say('best', 'tốt nhất')}` : ''}</div>
         <div className="font-num font-semibold">{compare[v] !== undefined ? `${Number(formatUnits(compare[v]!, 6)).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${to}` : say('unavailable', 'không có giá')}</div>
       </div>)}
     </div>}
-    {quote && compare.xylonet !== undefined && compare.uniswap !== undefined && venueGap(compare.xylonet, compare.uniswap) >= 5 && <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-amber-200 text-[12px]">
-      {say(`The two venues differ by ${venueGap(compare.xylonet, compare.uniswap).toFixed(1)}%. Testnet pools can be badly mispriced — check what you receive before confirming.`, `Giá giữa hai sàn lệch ${venueGap(compare.xylonet, compare.uniswap).toFixed(1)}%. Pool trên testnet có thể lệch giá nhiều — hãy xem kỹ số nhận được trước khi xác nhận.`)}
-      {(compare[quote.venue] ?? 0n) < (compare[quote.venue === 'uniswap' ? 'xylonet' : 'uniswap'] ?? 0n) && ` ${say(`${VENUE_LABEL[quote.venue === 'uniswap' ? 'xylonet' : 'uniswap']} gives more.`, `${VENUE_LABEL[quote.venue === 'uniswap' ? 'xylonet' : 'uniswap']} cho nhiều hơn.`)}`}
+    {quote && spread >= 5 && <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-amber-200 text-[12px]">
+      {say(`Prices across venues differ by up to ${spread.toFixed(1)}%. Testnet pools can be badly mispriced — check what you receive before confirming.`, `Giá giữa các sàn lệch tới ${spread.toFixed(1)}%. Pool trên testnet có thể lệch giá nhiều — hãy xem kỹ số nhận được trước khi xác nhận.`)}
+      {bestVenue && bestVenue !== quote.venue && ` ${say(`${VENUE_LABEL[bestVenue]} gives more.`, `${VENUE_LABEL[bestVenue]} cho nhiều hơn.`)}`}
     </p>}
     {quote && <div className={T.sub}>{say('Live output', 'Nhận dự kiến')}: {formatUnits(quote.quote.amountOut, 6)} {to} · {say('Minimum', 'Tối thiểu')}: {formatUnits(quote.minimumReceive, 6)} {to} · {say('Quote expires in 45 seconds', 'Báo giá hết hạn sau 45 giây')}</div>}
     {stage === 'review-approval' && prepared && <p>{say('Review finite approval', 'Xem lại phê duyệt hữu hạn')}{quote?.venue === 'uniswap' ? ` (${approvalStep?.kind === 'permit2' ? say('step 2/2: Permit2 → Uniswap router', 'bước 2/2: Permit2 → router Uniswap') : say('step 1/2: token → Permit2', 'bước 1/2: token → Permit2')})` : ''}: {formatUnits(quote!.quote.amountIn, 6)} {from} · {VENUE_LABEL[quote!.venue]} · {say('wallet confirmation required', 'cần xác nhận trong ví')}</p>}

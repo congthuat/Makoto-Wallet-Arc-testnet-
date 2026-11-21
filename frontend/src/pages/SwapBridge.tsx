@@ -130,7 +130,7 @@ function SwapForm() {
             </div>
           )}
           {mode === 'connected' && address ? <><div className="mt-4"><VenuePicker value={venue} onChange={setVenue} /></div><LiveSwapControl account={address} from={from} to={to} amount={amount} slip={slip} venue={venue} onConfirmed={async () => { await refetchWallet() }} onComplete={() => { setAmount(''); setFrom('USDC'); setTo('EURC'); setSlip('0.5%') }} /></> : <Button variant="primary" size="lg" className="w-full mt-4" disabled={!amt || !!err} onClick={() => { const review = prepareBrainReview(brainAction(), brainContext()); if (review.assessment.status === 'blocked') notify(tr(review.assessment.blockers[0] ?? 'Swap blocked by safety policy'), 'err'); else notify(tr('Safety review prepared — a fresh live quote and simulation are required before wallet confirmation')) }}>{err ?? tr(amt ? 'Review swap (preview)' : 'Enter an amount')}</Button>}
-          <p className={`mt-2 text-[12px] text-center ${T.mute}`}>{tr(mode === 'connected' ? 'Reference prices above are estimates; the live XyloNet / Uniswap quote appears in review.' : 'Based on reference prices. You’ll see the final quote before signing.')}</p>
+          <p className={`mt-2 text-[12px] text-center ${T.mute}`}>{tr(mode === 'connected' ? 'Reference prices above are estimates; live quotes from XyloNet, Uniswap, Curve and Arc Swap appear in review.' : 'Based on reference prices. You’ll see the final quote before signing.')}</p>
         </Card>
         <Card className="p-5">
           <div className="text-[14px] font-semibold">{tr('Why swap on Arc?')}</div>

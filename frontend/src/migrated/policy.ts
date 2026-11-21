@@ -4,6 +4,7 @@ import type { PreparedToolAction, SwapToolQuote, BridgeToolQuote, ToolResult } f
 import { BASE_SEPOLIA_CCTP_DOMAIN, CCTP_KIT_BRIDGE_TESTNET } from './cctp.ts'
 import { XYLO_ROUTER } from './swap.ts'
 import { decodePermit2Approval, PERMIT2, PERMIT2_EXPIRY_SECONDS, UNI_ROUTER } from './uniswap.ts'
+import { ARCSWAP_ROUTER, CURVE_POOLS } from './dexVenues.ts'
 import { sameCctpActionMaterial, sameCctpQuoteMaterial } from '../protocols/circle/cctpAdapter.ts'
 
 /** Adapted from donor policyEngine precedence and transactionOrchestrator request binding. */
@@ -29,7 +30,7 @@ export const requestId = (value: PreparedToolAction): Hex => keccak256(stringToH
 export function verifyFiniteApproval(action: PreparedToolAction, expected: { symbol: 'USDC' | 'EURC'; spender: string; amount: bigint }): boolean {
   if (action.kind !== 'approval' || action.chainId !== ARC.chainId || action.request.from.toLowerCase() !== action.account.toLowerCase() || action.request.value !== '0x0') return false
   const token = TOKENS.find((item) => item.sym === expected.symbol)
-  if (!token || !same(action.request.to, token.address) || ![XYLO_ROUTER, CCTP_KIT_BRIDGE_TESTNET, PERMIT2].some((spender) => same(spender, expected.spender))) return false
+  if (!token || !same(action.request.to, token.address) || ![XYLO_ROUTER, ARCSWAP_ROUTER, ...CURVE_POOLS, CCTP_KIT_BRIDGE_TESTNET, PERMIT2].some((spender) => same(spender, expected.spender))) return false
   if (expected.amount <= 0n || expected.amount >= (1n << 256n) - 1n) return false
   try {
     const decoded = decodeFunctionData({ abi: erc20Abi, data: action.request.data })
@@ -73,7 +74,10 @@ export function evaluateToolPolicy(input: {
   if (now < action.preparedAt || now > action.expiresAt) add('REVIEW_EXPIRED', 'REVALIDATE')
   if (now > quote.expiresAt) add('QUOTE_EXPIRED', 'REQUOTE')
   if (action.kind === 'swap') {
-    const route = 'quote' in quote ? (quote.venue === 'uniswap' ? UNI_ROUTER : XYLO_ROUTER) : undefined
+    const route = !('quote' in quote) ? undefined
+      : quote.venue === 'uniswap' ? UNI_ROUTER : quote.venue === 'arcswap' ? ARCSWAP_ROUTER
+      : quote.venue === 'curve' ? CURVE_POOLS.find((pool) => same(pool, quote.quote.router))
+      : quote.venue === 'xylonet' || quote.venue === undefined ? XYLO_ROUTER : undefined
     if (!('quote' in quote) || !route || !same(action.request.to, route) || !same(quote.quote.router, route)) add('UNTRUSTED_SWAP_ROUTE', 'BLOCK')
     else {
       if (quote.minimumReceive <= 0n || quote.minimumReceive > quote.quote.amountOut || ![0.005, 0.01, 0.03].includes(quote.slippage)) add('INVALID_SLIPPAGE', 'BLOCK')

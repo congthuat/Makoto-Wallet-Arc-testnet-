@@ -10,6 +10,8 @@ export function VenuePicker({ value, onChange, disabled }: { value: SwapVenueCho
     { id: 'best', label: vi ? 'Giá tốt nhất' : 'Best price' },
     { id: 'xylonet', label: 'XyloNet' },
     { id: 'uniswap', label: 'Uniswap' },
+    { id: 'curve', label: 'Curve' },
+    { id: 'arcswap', label: 'Arc Swap' },
   ]
   return <div className="flex items-center gap-2 text-[12px] flex-wrap">
     <span className={T.mute}>{vi ? 'Sàn' : 'Venue'}:</span>
@@ -21,7 +23,9 @@ export function VenuePicker({ value, onChange, disabled }: { value: SwapVenueCho
 /** Venue named in a chat message ("qua Uniswap", "via xylonet"); otherwise best price. */
 export function venueFromText(text: string): SwapVenueChoice {
   const t = text.toLowerCase()
+  if (/arc\s?swap/.test(t)) return 'arcswap'
   if (/uni\s?swap|\buni\b/.test(t)) return 'uniswap'
+  if (/curve/.test(t)) return 'curve'
   if (/xylo/.test(t)) return 'xylonet'
   return 'best'
 }

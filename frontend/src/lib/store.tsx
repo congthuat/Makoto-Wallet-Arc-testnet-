@@ -163,7 +163,7 @@ function useWalletState() {
     const timer = setInterval(() => { void reconcile() }, 30_000)
     return () => clearInterval(timer)
   }, [mode, address, bridgeRecords, upsertBridge, providerRevision])
-  const [swapDraft, setSwapDraft] = useState<{ from?: string; to?: string; amount?: string; dest?: string; venue?: 'best' | 'xylonet' | 'uniswap' } | null>(null)
+  const [swapDraft, setSwapDraft] = useState<{ from?: string; to?: string; amount?: string; dest?: string; venue?: 'best' | 'xylonet' | 'uniswap' | 'curve' | 'arcswap' } | null>(null)
   const [agentSeed, setAgentSeed] = useState<string | null>(null)
   const [agentSeedMode, setAgentSeedMode] = useState<'monitor' | 'automation' | null>(null)
   const [lockPreview, setLockPreview] = useState(false)

@@ -13,9 +13,10 @@ export const UNI_TICK_SPACING = 10
 /** Permit2 allowance to the router lasts 30 days; the amount is always the exact swap amount. */
 export const PERMIT2_EXPIRY_SECONDS = 30 * 24 * 3600
 
-export type SwapVenue = 'xylonet' | 'uniswap'
+export type SwapVenue = 'xylonet' | 'uniswap' | 'curve' | 'arcswap'
 export type SwapVenueChoice = SwapVenue | 'best'
-export const VENUE_LABEL: Record<SwapVenue, string> = { xylonet: 'XyloNet', uniswap: 'Uniswap v4' }
+export const SWAP_VENUES: readonly SwapVenue[] = ['xylonet', 'uniswap', 'curve', 'arcswap']
+export const VENUE_LABEL: Record<SwapVenue, string> = { xylonet: 'XyloNet', uniswap: 'Uniswap v4', curve: 'Curve', arcswap: 'Arc Swap' }
 
 export const quoterAbi = [{
   type: 'function', name: 'quoteExactInputSingle', stateMutability: 'nonpayable',
@@ -43,9 +44,10 @@ export function uniswapQuoteCall(tokenIn: Address, tokenOut: Address, amountIn: 
   return encodeFunctionData({ abi: quoterAbi, functionName: 'quoteExactInputSingle', args: [{ poolKey, zeroForOne, exactAmount: amountIn, hookData: '0x' }] })
 }
 
-export function createUniswapQuote(fromAssetId: XyloSwappableAssetId, toAssetId: XyloSwappableAssetId, amountIn: bigint, amountOut: bigint, quotedAt = Date.now()): SwapQuote {
-  if (fromAssetId === toAssetId || amountIn <= 0n || amountOut <= 0n) throw new Error('Invalid Uniswap quote')
-  return { fromAssetId, toAssetId, amountIn, amountOut, chainId: arcTestnet.id, router: UNI_ROUTER, pool: UNI_POOL_MANAGER, quotedAt }
+/** Quote for a non-Xylo venue; `router` is the exact contract the swap transaction will call. */
+export function createVenueQuote(fromAssetId: XyloSwappableAssetId, toAssetId: XyloSwappableAssetId, amountIn: bigint, amountOut: bigint, router: Address, pool: Address, quotedAt = Date.now()): SwapQuote {
+  if (fromAssetId === toAssetId || amountIn <= 0n || amountOut <= 0n) throw new Error('Invalid swap quote')
+  return { fromAssetId, toAssetId, amountIn, amountOut, chainId: arcTestnet.id, router: getAddress(router), pool: getAddress(pool), quotedAt }
 }
 
 const SWAP_EXACT_IN_SINGLE = 0x06
