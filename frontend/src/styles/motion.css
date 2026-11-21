@@ -215,3 +215,18 @@ html[data-festive=on] .mk-primary { box-shadow: 0 0 0 1px rgba(239,68,68,.35), 0
 @keyframes mk-gift-burst { 0% { opacity: 1; transform: translate(-50%, -50%) rotate(0) } 100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y) + 60px)) rotate(var(--r)) } }
 .mk-gift-snow > span { position: absolute; top: -6px; border-radius: 9999px; background: #fff; animation: mk-snow linear infinite }
 @media (prefers-reduced-motion: reduce) { .mk-giftbox, .mk-giftbox-lid, .mk-gift-confetti, .mk-gift-snow > span { animation: none !important } }
+
+/* Secret Santa flip card + Advent doors */
+.mk-flip { perspective: 1200px }
+.mk-flip-inner { position: relative; transform-style: preserve-3d; transition: transform .9s var(--mk-ease-spring) }
+.mk-flip.is-flipped .mk-flip-inner { transform: rotateY(180deg) }
+.mk-flip-face { backface-visibility: hidden; -webkit-backface-visibility: hidden }
+.mk-flip-back { position: absolute; inset: 0; transform: rotateY(180deg) }
+.mk-slot { animation: mk-slot .12s linear infinite }
+@keyframes mk-slot { from { transform: translateY(-30%); opacity: .3 } to { transform: translateY(30%); opacity: 1 } }
+.mk-door { perspective: 700px }
+.mk-door-panel { transform-origin: 0 50%; transition: transform .8s var(--mk-ease-spring), opacity .8s; backface-visibility: hidden }
+.mk-door.is-open .mk-door-panel { transform: rotateY(-108deg); opacity: .15 }
+.mk-door.is-today .mk-door-panel { animation: mk-door-knock 2.4s ease-in-out infinite }
+@keyframes mk-door-knock { 0%, 80%, 100% { transform: rotate(0) } 85% { transform: rotate(-3deg) } 90% { transform: rotate(3deg) } 95% { transform: rotate(-1.5deg) } }
+@media (prefers-reduced-motion: reduce) { .mk-flip-inner, .mk-door-panel { transition: none } .mk-slot, .mk-door.is-today .mk-door-panel { animation: none } }

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useState } from 'react'
-import { ArrowLeftRight, Gift, Rainbow, ReceiptText, Users } from 'lucide-react'
+import { ArrowLeftRight, CalendarDays, Dices, Gift, PartyPopper, Rainbow, ReceiptText, TreePine, Users } from 'lucide-react'
 import { useWallet, type Page } from '../lib/store'
 import { useT } from '../lib/i18n'
 import { T } from './wallet/ui'
@@ -21,6 +21,14 @@ export const HUBS: Hub[] = [
     tabs: [
       { id: 'swap', icon: ArrowLeftRight, label: 'Swap', desc: 'Trade USDC ⇄ EURC' },
       { id: 'bridge', icon: Rainbow, label: 'Bridge', desc: 'Move USDC across chains' },
+    ],
+  },
+  {
+    id: 'christmas', label: 'Christmas', icon: TreePine,
+    tabs: [
+      { id: 'advent', icon: CalendarDays, label: 'Advent calendar', desc: 'A surprise every day' },
+      { id: 'santa', icon: Dices, label: 'Secret Santa', desc: 'Draw names with friends' },
+      { id: 'wrapped', icon: PartyPopper, label: 'Your 2026', desc: 'Your year in review' },
     ],
   },
 ]

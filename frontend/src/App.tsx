@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Wallet, History, Sparkles, ArrowLeftRight, Settings, HelpCircle, MessageSquareText,
-  Search, Copy, ListChecks, PieChart, Eye, EyeOff, ArrowUpRight, ArrowDownLeft, Menu, X, Bell, Check, Home, LogOut, Droplets, Globe, ChevronDown, Sun, Moon, EyeOff as EyeOffIcon, Info, Command, AlertTriangle, Plus, Coins, ExternalLink, ReceiptText, ShieldCheck, Gift, BookUser, PartyPopper,
+  Search, Copy, ListChecks, PieChart, Eye, EyeOff, ArrowUpRight, ArrowDownLeft, Menu, X, Bell, Check, Home, LogOut, Droplets, Globe, ChevronDown, Sun, Moon, EyeOff as EyeOffIcon, Info, Command, AlertTriangle, Plus, Coins, ExternalLink, ReceiptText, ShieldCheck, Gift, BookUser, TreePine,
 } from 'lucide-react'
 import { WalletProvider, useWallet, type Page } from './lib/store'
 import { useT, LANGS, setLang } from './lib/i18n'
@@ -37,6 +37,8 @@ const SplitPage = lazy(() => import('./pages/Split'))
 const ContactsPage = lazy(() => import('./pages/Contacts'))
 const GiftsPage = lazy(() => import('./pages/Gifts'))
 const WrappedPage = lazy(() => import('./pages/Wrapped'))
+const AdventPage = lazy(() => import('./pages/Advent'))
+const SantaPage = lazy(() => import('./pages/Santa'))
 const TrustPage = lazy(() => import('./pages/Trust'))
 const AboutPage = lazy(() => import('./pages/Product').then((m) => ({ default: m.AboutPage })))
 const LegalPage = lazy(() => import('./pages/Product').then((m) => ({ default: m.LegalPage })))
@@ -56,7 +58,7 @@ const NAV: { group: string; items: { id: SidebarDestination; icon: any; label: s
     { id: 'home', icon: Home, label: 'Home' },
     { id: 'agent', icon: Sparkles, label: 'Agent' },
     { id: 'tasks', icon: ListChecks, label: 'Tasks' },
-    { id: 'wrapped', icon: PartyPopper, label: 'Your 2026' },
+    { id: 'advent', icon: TreePine, label: 'Christmas' },
   ] },
   { group: 'TRANSACTIONS', items: [
     { id: 'send', icon: ArrowUpRight, label: 'Send' },
@@ -364,7 +366,7 @@ function MobileTabBar() {
     { icon: ReceiptText, label: 'Payment tools', on: () => go('pay') },
     { icon: ArrowLeftRight, label: 'Swap & Bridge', on: () => go('swap') },
     { icon: ListChecks, label: 'Tasks', on: () => go('tasks') },
-    { icon: PartyPopper, label: 'Your 2026', on: () => go('wrapped') },
+    { icon: TreePine, label: 'Christmas', on: () => go('advent') },
     { icon: ShieldCheck, label: 'Trust Center', on: () => go('trust') },
     { icon: Droplets, label: 'Get test tokens', on: () => go('faucet') },
     { icon: Settings, label: 'Settings', on: () => go('settings') },
@@ -414,7 +416,7 @@ function PageSkeleton() {
   )
 }
 
-const TITLES: Partial<Record<Page, string>> = { agent: 'Agent', tasks: 'Tasks', dashboard: 'Portfolio', assets: 'Assets', activity: 'Activity', send: 'Send', swap: 'Swap', bridge: 'Bridge', pay: 'Payment requests', split: 'Split a bill', contacts: 'Contacts', gifts: 'Gift links', wrapped: 'Your 2026', settings: 'Settings', insights: 'Insights', faucet: 'Faucet', about: 'About', legal: 'Terms & Privacy', changelog: "What's new", status: 'System status', audit: 'UX audit', trust: 'Trust Center' }
+const TITLES: Partial<Record<Page, string>> = { agent: 'Agent', tasks: 'Tasks', dashboard: 'Portfolio', assets: 'Assets', activity: 'Activity', send: 'Send', swap: 'Swap', bridge: 'Bridge', pay: 'Payment requests', split: 'Split a bill', contacts: 'Contacts', gifts: 'Gift links', wrapped: 'Your 2026', advent: 'Advent calendar', santa: 'Secret Santa', settings: 'Settings', insights: 'Insights', faucet: 'Faucet', about: 'About', legal: 'Terms & Privacy', changelog: "What's new", status: 'System status', audit: 'UX audit', trust: 'Trust Center' }
 
 /** Privacy screen preview only — App Lock is not implemented and is not a security feature. */
 function LockScreen({ onClose }: { onClose: () => void }) {
@@ -460,7 +462,7 @@ function Shell() {
   const hub = hubOf(w.page)
   const pages: Record<Page, React.ReactNode> = {
     home: <HomePage />, agent: <AgentPage />, tasks: <TasksPage />, dashboard: <Dashboard />, assets: <AssetsPage />, activity: <ActivityPage />,
-    send: <SendPage />, swap: <SwapPage />, bridge: <BridgePage />, settings: <SettingsPage />, insights: <InsightsPage />, audit: <AuditPage />, faucet: <FaucetPage />, pay: <PayRequestsPage />, split: <SplitPage />, contacts: <ContactsPage />, gifts: <GiftsPage />, wrapped: <WrappedPage />,
+    send: <SendPage />, swap: <SwapPage />, bridge: <BridgePage />, settings: <SettingsPage />, insights: <InsightsPage />, audit: <AuditPage />, faucet: <FaucetPage />, pay: <PayRequestsPage />, split: <SplitPage />, contacts: <ContactsPage />, gifts: <GiftsPage />, wrapped: <WrappedPage />, advent: <AdventPage />, santa: <SantaPage />,
     about: <AboutPage />, legal: <LegalPage />, changelog: <ChangelogPage />, status: <StatusPage />, trust: <TrustPage />,
   }
 

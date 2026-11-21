@@ -18,7 +18,7 @@ import {
   type Contact, type Holding, type NetworkInfo, type Prices, type Tx, type WalletApi,
 } from './wallet'
 
-export type Page = 'home' | 'agent' | 'tasks' | 'dashboard' | 'assets' | 'activity' | 'send' | 'swap' | 'bridge' | 'pay' | 'split' | 'contacts' | 'gifts' | 'settings' | 'insights' | 'audit' | 'faucet' | 'about' | 'legal' | 'changelog' | 'status' | 'trust' | 'wrapped'
+export type Page = 'home' | 'agent' | 'tasks' | 'dashboard' | 'assets' | 'activity' | 'send' | 'swap' | 'bridge' | 'pay' | 'split' | 'contacts' | 'gifts' | 'settings' | 'insights' | 'audit' | 'faucet' | 'about' | 'legal' | 'changelog' | 'status' | 'trust' | 'wrapped' | 'advent' | 'santa'
 
 export type FeedTx = {
   hash: string; logIndex: number; block: number; timestamp: string; from: string | null; to: string | null
@@ -65,7 +65,7 @@ function useWalletState() {
   const queryClient = useQueryClient()
   const providerRevision = useSyncExternalStore(subscribeBrowserWallets, browserWalletRevision, () => 0)
   useEffect(() => { discoverBrowserWallets(); void restoreWalletConnect() }, [])
-  const [page, setPage] = useState<Page>(() => { if (typeof window === 'undefined') return 'home'; const h = window.location.hash.slice(1); if (/^pay(?:-\d{1,20})?$/.test(h)) return 'pay'; if (/^gift(?:s|-\d{1,20}-[0-9a-fA-F]{64})?$/.test(h)) return 'gifts'; return (['about', 'legal', 'changelog', 'status', 'faucet', 'trust'] as string[]).includes(h) ? (h as Page) : 'home' })
+  const [page, setPage] = useState<Page>(() => { if (typeof window === 'undefined') return 'home'; const h = window.location.hash.slice(1); if (/^pay(?:-\d{1,20})?$/.test(h)) return 'pay'; if (/^gift(?:s|-\d{1,20}-[0-9a-fA-F]{64})?$/.test(h)) return 'gifts'; if (/^santa(?:-[A-Za-z0-9_-]{20,4000})?$/.test(h)) return 'santa'; return (['about', 'legal', 'changelog', 'status', 'faucet', 'trust'] as string[]).includes(h) ? (h as Page) : 'home' })
   const [hidden, setHidden] = useLocal('mk.hidden', false)
   const [mode, setMode] = useLocal<Mode>('mk.mode', 'demo')
   const [address, setAddress] = useLocal<string>('mk.address', '')
@@ -431,7 +431,7 @@ function useWalletState() {
   // A gift link opened in an already-open tab switches to the gift page.
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const onHash = () => { if (/^#gift-\d{1,20}-[0-9a-fA-F]{64}$/.test(window.location.hash)) setPage('gifts') }
+    const onHash = () => { if (/^#gift-\d{1,20}-[0-9a-fA-F]{64}$/.test(window.location.hash)) setPage('gifts'); else if (/^#santa-[A-Za-z0-9_-]{20,4000}$/.test(window.location.hash)) setPage('santa') }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
@@ -442,7 +442,7 @@ function useWalletState() {
     const linkable = ['about', 'legal', 'changelog', 'status', 'faucet', 'trust'] as string[]
     // A credit-gift link is handled by the claim sheet; leave it alone until it is claimed or closed.
     const creditGift = /^credit-[0-9a-fA-F]{32}$/.test(current)
-    const next = page === 'pay' ? (/^pay(?:-\d{1,20})?$/.test(current) ? current : 'pay') : page === 'gifts' ? (/^gift-\d{1,20}-[0-9a-fA-F]{64}$/.test(current) ? current : 'gifts') : creditGift ? current : linkable.includes(page) ? page : ''
+    const next = page === 'pay' ? (/^pay(?:-\d{1,20})?$/.test(current) ? current : 'pay') : page === 'gifts' ? (/^gift-\d{1,20}-[0-9a-fA-F]{64}$/.test(current) ? current : 'gifts') : page === 'santa' ? (/^santa-[A-Za-z0-9_-]{20,4000}$/.test(current) ? current : 'santa') : creditGift ? current : linkable.includes(page) ? page : ''
     if (next === current) return
     const url = `${window.location.pathname}${window.location.search}${next ? `#${next}` : ''}`
     window.history.replaceState(window.history.state, '', url)

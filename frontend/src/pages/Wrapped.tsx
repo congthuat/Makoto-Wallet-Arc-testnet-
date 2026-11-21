@@ -5,6 +5,7 @@ import { useWallet } from '../lib/store'
 import { useT } from '../lib/i18n'
 import { short } from '../lib/wallet'
 import { fetchYearTransfers, summarizeYear, type YearStats } from '../lib/wrapped'
+import { markWrappedSeen } from '../lib/advent'
 import { Avatar, Button, Card, EmptyState, Orb, Skeleton, T } from '../components/wallet/ui'
 
 const L = (vi: boolean, en: string, viText: string) => (vi ? viText : en)
@@ -43,6 +44,7 @@ export default function WrappedPage() {
   const vi = lang === 'vi'
   const { live, address, contacts, swapRecords, bridgeRecords, sendRecords, go } = useWallet()
   const year = new Date().getFullYear()
+  useEffect(() => { markWrappedSeen() }, [])
 
   const q = useQuery({
     queryKey: ['wrapped', address, year],

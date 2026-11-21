@@ -278,11 +278,12 @@ function FestiveBanner() {
         <div className="text-[40px] leading-none mk-float" aria-hidden>🎄</div>
         <div className="flex-1 min-w-0">
           <div className="text-[16px] font-bold text-white">{tr('Merry Christmas from Makoto')}</div>
-          <div className="text-[13px] text-white/70 mt-0.5">{tr('Send a Christmas gift box to a friend, or look back at your year.')}</div>
+          <div className="text-[13px] text-white/70 mt-0.5">{tr('Send a Christmas gift box, open today’s Advent door or draw Secret Santa names.')}</div>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2 shrink-0">
           <button onClick={() => go('gifts')} className="mk-primary h-9 px-3.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white text-[13px] font-semibold inline-flex items-center gap-1.5">🎁 {tr('Send a gift')}</button>
-          <button onClick={() => go('wrapped')} className="h-9 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-[13px] font-semibold inline-flex items-center gap-1.5">✨ {tr('Your 2026')}</button>
+          <button onClick={() => go('advent')} className="h-9 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-[13px] font-semibold inline-flex items-center gap-1.5">📅 {tr('Advent calendar')}</button>
+          <button onClick={() => go('santa')} className="h-9 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-[13px] font-semibold inline-flex items-center gap-1.5">🎅 Secret Santa</button>
         </div>
       </div>
     </section>
