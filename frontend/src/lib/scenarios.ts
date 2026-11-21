@@ -1,3 +1,4 @@
+import { cctpDestinationFromText } from '../migrated/cctp.ts'
 // Legacy action and information sample scenarios. Persistent tasks use /api/tasks.
 
 export type SendScenario = { kind: 'send'; asset: string; amount: string; recipient: string }
@@ -25,7 +26,7 @@ const has = (t: string, words: string[]) => words.some((w) => t.includes(w))
 export function pickScenario(text: string): Scenario {
   const t = text.toLowerCase()
   if (has(t, ['swap', 'exchange', 'convert'])) return { kind: 'swap', asset: 'USDC', amount: '20', toAsset: 'EURC' }
-  if (has(t, ['bridge', 'cctp', 'cross-chain'])) return { kind: 'bridge', asset: 'USDC', amount: '10', dest: 'Base Sepolia' }
+  if (has(t, ['bridge', 'cctp', 'cross-chain'])) return { kind: 'bridge', asset: 'USDC', amount: '10', dest: cctpDestinationFromText(t)?.name ?? 'Base Sepolia' }
   if (has(t, ['send', 'transfer', 'pay'])) return { kind: 'send', asset: 'USDC', amount: '1', recipient: SAMPLE_RECIPIENT }
   if (has(t, ['portfolio', 'balance', 'worth', 'holding', 'how much'])) return { kind: 'portfolio' }
   if (has(t, ['activity', 'history', 'recent', 'transaction'])) return { kind: 'activity' }

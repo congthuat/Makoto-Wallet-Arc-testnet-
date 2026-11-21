@@ -1,7 +1,7 @@
 import { decodeFunctionData, erc20Abi, getAddress, keccak256, stringToHex, type Hex } from 'viem'
 import { ARC, TOKENS } from '../lib/wallet.ts'
 import type { PreparedToolAction, SwapToolQuote, BridgeToolQuote, ToolResult } from './toolLayer.ts'
-import { BASE_SEPOLIA_CCTP_DOMAIN, CCTP_KIT_BRIDGE_TESTNET } from './cctp.ts'
+import { CCTP_KIT_BRIDGE_TESTNET, cctpDestinationByChainId } from './cctp.ts'
 import { XYLO_ROUTER } from './swap.ts'
 import { decodePermit2Approval, PERMIT2, PERMIT2_EXPIRY_SECONDS, UNI_ROUTER } from './uniswap.ts'
 import { ARCSWAP_ROUTER, CURVE_POOLS } from './dexVenues.ts'
@@ -86,7 +86,7 @@ export function evaluateToolPolicy(input: {
     }
   } else if (action.kind === 'cctp-burn') {
     const semantics = action.cctp
-    const validRoute = 'totalDebit' in quote && quote.asset === 'USDC' && quote.sourceChainId === ARC.chainId && quote.destinationChainId === 84532 && quote.destinationDomain === BASE_SEPOLIA_CCTP_DOMAIN &&
+    const validRoute = 'totalDebit' in quote && quote.asset === 'USDC' && quote.sourceChainId === ARC.chainId && cctpDestinationByChainId(quote.destinationChainId)?.domain === quote.destinationDomain &&
       same(action.request.to, CCTP_KIT_BRIDGE_TESTNET) && same(action.request.to, quote.spender) && !!semantics && semantics.asset === quote.asset &&
       semantics.amount === quote.amount && semantics.expectedReceive === quote.expectedReceive &&
       semantics.destinationChainId === quote.destinationChainId && semantics.destinationDomain === quote.destinationDomain &&

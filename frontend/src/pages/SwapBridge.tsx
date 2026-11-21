@@ -1,3 +1,5 @@
+import { CCTP_DESTINATIONS, DEFAULT_CCTP_DESTINATION, cctpDestinationByChainId, cctpDestinationByName, cctpDestinationFromText } from '../migrated/cctp.ts'
+import { DestinationPicker } from '../components/DestinationPicker.tsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowDownUp, ChevronDown, Info, Route, Settings2, Flame, BadgeCheck, Coins, ArrowRight, Clock, Zap } from 'lucide-react'
 import { formatUnits } from 'viem'
@@ -158,39 +160,46 @@ function BridgeForm() {
   const [speed, setSpeed] = useState<'Fast' | 'Standard'>(restored?.kind === 'cctp' && restored.transferSpeed === 'SLOW' ? 'Standard' : 'Fast')
   const [amount, setAmount] = useState(restored?.amount ?? '')
   const [routeBlocked, setRouteBlocked] = useState(false)
+  const [destId, setDestId] = useState<number>(DEFAULT_CCTP_DESTINATION.chainId)
   const [liveQuote, setLiveQuote] = useState<LiveQuote>()
   useEffect(() => {
     if (!swapDraft) return
-    const supported = !swapDraft.dest || /^Base(?: Sepolia)?$/i.test(swapDraft.dest)
+    const chosen = swapDraft.dest ? cctpDestinationByName(swapDraft.dest) ?? cctpDestinationFromText(swapDraft.dest) : undefined
+    const supported = !swapDraft.dest || !!chosen
+    if (chosen) setDestId(chosen.chainId)
     setRouteBlocked(!supported)
     if (supported && swapDraft.amount) setAmount(swapDraft.amount)
     setSwapDraft(null)
   }, [swapDraft, setSwapDraft])
-  useEffect(() => setLiveQuote(undefined), [address, amount, speed])
+  useEffect(() => setLiveQuote(undefined), [address, amount, speed, destId])
   useEffect(() => {
     if (mode !== 'connected' || !address || typeof sessionStorage === 'undefined') return
     const handoff = consumeBrainHandoff(sessionStorage, address)
     if (!handoff || handoff.action !== 'bridge') return
     const supported = (!handoff.sourceChain || handoff.sourceChain === ARC.name)
-      && (!handoff.destinationChain || handoff.destinationChain === 'Base Sepolia')
+      && (!handoff.destinationChain || !!cctpDestinationByName(handoff.destinationChain))
       && (!handoff.asset || handoff.asset === 'USDC')
+    const chosen = cctpDestinationByName(handoff.destinationChain)
+    if (chosen) setDestId(chosen.chainId)
     setRouteBlocked(!supported)
     if (supported && handoff.amount) setAmount(handoff.amount)
   }, [mode, address])
   const bal = holdings.find((h) => h.symbol === 'USDC')?.balance ?? 0
   const amt = Number(amount) || 0
   const src = ARC.name
-  const dst = 'Base Sepolia'
+  const destination = cctpDestinationByChainId(destId) ?? DEFAULT_CCTP_DESTINATION
+  const dst = destination.name
   const directCctp = mode === 'connected' && !!address
   const brainAction = (): BrainPreparation => ({ kind: 'bridge', rawUserText: 'Manual Bridge flow', asset: 'USDC', amount: amount || undefined, sourceChain: src, destinationChain: dst })
   const brainContext = () => ({ connected: mode === 'connected', account: mode === 'connected' ? address : undefined, chainId: walletChainId, balances: Object.fromEntries(holdings.filter((x) => x.verified).map((x) => [x.symbol, x.balance])) })
 
-  const ChainBox = ({ label, name }: { label: string; name: string }) => {
+  const ChainBox = ({ label, name, picker }: { label: string; name: string; picker?: boolean }) => {
     return (
       <div className="flex-1 rounded-2xl bg-black/30 border border-white/[0.08] p-3.5 min-w-0">
         <div className={`text-[12px] ${T.mute}`}>{label}</div>
-        <div className="mt-1 font-semibold text-[14px] flex items-center gap-2">
-          <span aria-hidden="true" className="h-5 px-1.5 rounded-md text-[8.5px] font-black flex items-center justify-center shrink-0 text-[#0b0b10]" style={{ background: name === src ? '#D4FF3A' : '#7aa7ff' }}>{name === src ? 'ARC' : 'BASE'}</span> {name}
+        <div className="mt-1 font-semibold text-[14px] flex items-center gap-2 min-w-0">
+          <span aria-hidden="true" className="h-5 px-1.5 rounded-md text-[8.5px] font-black flex items-center justify-center shrink-0 text-[#0b0b10]" style={{ background: name === src ? '#D4FF3A' : '#7aa7ff' }}>{name === src ? 'ARC' : destination.short.slice(0, 4).toUpperCase()}</span>
+          {picker ? <DestinationPicker label={tr('To')} value={destId} onChange={(id) => { setDestId(id); setRouteBlocked(false) }} className="min-w-0 w-full" /> : name}
         </div>
       </div>
     )
@@ -198,14 +207,14 @@ function BridgeForm() {
 
   return (
     <>
-      <PageHeader eyebrow="Cross-chain" title="Bridge USDC" desc={say('Currently supported test route: Arc Testnet → Base Sepolia · Circle CCTP v2 · USDC only.', 'Tuyến thử nghiệm hiện được hỗ trợ: Arc Testnet → Base Sepolia · Circle CCTP v2 · Chỉ USDC.')} />
+      <PageHeader eyebrow="Cross-chain" title="Bridge USDC" desc={say(`Arc Testnet → ${CCTP_DESTINATIONS.length} test chains (Base, Ethereum, Arbitrum, Optimism, Avalanche, Polygon…) · Circle CCTP v2 · USDC only.`, `Arc Testnet → ${CCTP_DESTINATIONS.length} chain thử nghiệm (Base, Ethereum, Arbitrum, Optimism, Avalanche, Polygon…) · Circle CCTP v2 · Chỉ USDC.`)} />
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,520px)_1fr] gap-5 items-start">
         <Card className="p-5 mk-in space-y-4">
           <div className="flex items-center justify-between gap-2 flex-wrap"><span className="font-semibold text-[13px]">Circle CCTP v2 · {say('USDC only', 'Chỉ USDC')}</span><Badge tone="warn">{say(liveQuote ? 'Official Circle quote' : 'Live quote required', liveQuote ? 'Báo giá chính thức của Circle' : 'Cần báo giá trực tiếp')}</Badge></div>
           <div className="flex items-center gap-2">
             <ChainBox label={tr('From')} name={src} />
             <ArrowRight size={18} className={`${T.mute} shrink-0`} />
-            <ChainBox label={tr('To')} name={dst} />
+            <ChainBox label={tr('To')} name={dst} picker />
           </div>
           <div className="mk-field-shell rounded-2xl bg-black/30 border border-white/[0.08] p-4">
             <div className={`flex justify-between text-[12px] ${T.mute}`}><span>{tr('Amount')}</span><span>{tr('Balance')} {mask(fmtAmt(bal, 4))} USDC</span></div>
@@ -228,9 +237,9 @@ function BridgeForm() {
             <div className="flex justify-between gap-3"><span className={`${T.mute} inline-flex items-center gap-1`}><Route size={13} /> {say('Supported test route', 'Tuyến thử nghiệm hỗ trợ')}</span><span className="text-right">{src} → {dst}</span></div>
             <div className="flex justify-between"><span className={T.mute}>{say('Selected transfer speed', 'Tốc độ chuyển đã chọn')}</span><span>{tr(speed)}</span></div>
           </div>
-          {routeBlocked && <p role="status" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-[12px] text-amber-200">{say('Only Arc Testnet → Base Sepolia USDC is supported. Enter an amount to prepare this route.', 'Chỉ hỗ trợ USDC từ Arc Testnet → Base Sepolia. Nhập số tiền để chuẩn bị tuyến này.')}</p>}
+          {routeBlocked && <p role="status" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-[12px] text-amber-200">{say('That destination is not supported. Pick a chain from the list above, then enter an amount.', 'Chain đích đó chưa được hỗ trợ. Chọn một chain trong danh sách ở trên rồi nhập số tiền.')}</p>}
           {directCctp && address
-            ? <LiveCctpControl account={address} amount={routeBlocked ? '' : amount} transferSpeed={speed === 'Fast' ? 'FAST' : 'SLOW'} onQuoteChange={setLiveQuote} onSourceConfirmed={async () => { await refetchWallet() }} onComplete={() => { setAmount(''); setSpeed('Fast') }} />
+            ? <LiveCctpControl account={address} amount={routeBlocked ? '' : amount} transferSpeed={speed === 'Fast' ? 'FAST' : 'SLOW'} destinationChainId={destination.chainId} onQuoteChange={setLiveQuote} onSourceConfirmed={async () => { await refetchWallet() }} onComplete={() => { setAmount(''); setSpeed('Fast') }} />
             : <Button variant="primary" size="lg" className="w-full" disabled={routeBlocked || !amt || amt > bal} onClick={() => { const review = prepareBrainReview(brainAction(), brainContext()); if (review.assessment.status === 'blocked') notify(tr(review.assessment.blockers[0] ?? 'Bridge blocked by safety policy'), 'err'); else notify(tr('Safety review prepared — route evidence and destination confirmation remain required before completion')) }}>{tr(amt ? (amt > bal ? 'Insufficient USDC' : 'Review bridge (preview)') : 'Enter an amount')}</Button>}
           <p className={`text-[12px] text-center ${T.mute}`}>{tr('Final route and details are confirmed before you sign in your wallet.')}</p>
         </Card>
@@ -240,8 +249,8 @@ function BridgeForm() {
             {[
               { icon: Info, t: say('Review / approval if required', 'Xem lại / phê duyệt nếu cần'), d: say('Review the quote and any exact USDC approval separately before confirming in your wallet.', 'Xem lại báo giá và phê duyệt USDC chính xác riêng trước khi xác nhận trong ví.') },
               { icon: Flame, t: tr('Burn on {chain}').replace('{chain}', src), d: tr('USDC is burned (removed) on the source chain by the CCTP contract and re-minted on the destination — you authorize it in your wallet.') },
-              { icon: BadgeCheck, t: say('Circle attestation / forwarding', 'Chứng thực / chuyển tiếp Circle'), d: say('Circle attests to the burn and forwards the mint to Base Sepolia.', 'Circle chứng thực lệnh đốt và chuyển tiếp lệnh tạo USDC tới Base Sepolia.') },
-              { icon: Coins, t: say('Destination confirmation on Base Sepolia', 'Xác nhận đích trên Base Sepolia'), d: say('Completion requires a verified Base receipt and matching USDC transfer to your address.', 'Chỉ hoàn tất khi có biên nhận Base được xác minh và giao dịch chuyển USDC phù hợp tới địa chỉ của bạn.') },
+              { icon: BadgeCheck, t: say('Circle attestation / forwarding', 'Chứng thực / chuyển tiếp Circle'), d: say(`Circle attests to the burn and forwards the mint to ${dst}.`, `Circle chứng thực lệnh đốt và chuyển tiếp lệnh tạo USDC tới ${dst}.`) },
+              { icon: Coins, t: say(`Destination confirmation on ${dst}`, `Xác nhận đích trên ${dst}`), d: say(`Completion requires a verified ${destination.short} receipt and matching USDC transfer to your address.`, `Chỉ hoàn tất khi có biên nhận ${destination.short} được xác minh và giao dịch chuyển USDC phù hợp tới địa chỉ của bạn.`) },
             ].map(({ icon: Icon, t, d }, i) => (
               <li key={t} className="flex gap-3">
                 <span className="w-8 h-8 rounded-xl bg-neon-500/15 text-neon-300 flex items-center justify-center shrink-0"><Icon size={16} /></span>

@@ -1,3 +1,4 @@
+import { DEFAULT_CCTP_DESTINATION, cctpDestinationByName } from './cctp.ts'
 import { ARC } from '../lib/wallet.ts'
 import { parseBrainRequest } from '../brain/parser.ts'
 import { routeBrainIntent } from '../brain/orchestration.ts'
@@ -21,7 +22,7 @@ function intentFor(preparation: BrainPreparation, id: string): unknown {
   const amount = preparation.amount
   if (preparation.kind === 'send') return { version: 1, id, kind: 'SEND', chainId: ARC.chainId, asset: preparation.asset?.toLowerCase(), amount, recipient: preparation.recipient }
   if (preparation.kind === 'swap') return { version: 1, id, kind: 'SWAP', chainId: ARC.chainId, fromAsset: preparation.asset?.toLowerCase(), toAsset: preparation.outputAsset?.toLowerCase(), amount }
-  return { version: 1, id, kind: 'BRIDGE', sourceChainId: ARC.chainId, destinationChainId: 84532, asset: 'usdc', amount, recipient: preparation.recipient }
+  return { version: 1, id, kind: 'BRIDGE', sourceChainId: ARC.chainId, destinationChainId: preparation.destinationChain ? cctpDestinationByName(preparation.destinationChain)?.chainId ?? -1 : DEFAULT_CCTP_DESTINATION.chainId, asset: 'usdc', amount, recipient: preparation.recipient }
 }
 
 export function planAgentRequest(raw: string, locale: BrainLocale = 'en', now = Date.now()): AgentPlanResult {

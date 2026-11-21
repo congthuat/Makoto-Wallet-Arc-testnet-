@@ -241,7 +241,7 @@ export function parseProposal(value: unknown): ChatProposal | undefined {
 export function proposalCommand(proposal: ChatProposal): string {
   if (proposal.kind === 'send') return `send ${proposal.amount} ${proposal.asset} to ${proposal.recipient ?? ''}`.trim()
   if (proposal.kind === 'swap') return `swap ${proposal.amount} ${proposal.asset} to ${proposal.outputAsset}`
-  return `bridge ${proposal.amount} USDC from Arc Testnet to Base Sepolia`
+  return `bridge ${proposal.amount} USDC from Arc Testnet to ${proposal.destination ?? 'Base Sepolia'}`
 }
 
 function parseMemory(value: unknown): ChatMemoryUpdate[] {

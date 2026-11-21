@@ -28,9 +28,9 @@ import { ARC, TOKENS } from '../../lib/wallet.ts'
 import type { SendProvider } from '../../lib/sendExecution.ts'
 import { makeArcRpcBridgeProvider } from '../../lib/arcRpcBridgeProvider.ts'
 import {
-  BASE_SEPOLIA_USDC,
   ARC_CCTP_DOMAIN,
-  BASE_SEPOLIA_CCTP_DOMAIN,
+  cctpDestinationByChainId,
+  cctpDestinationByDomain,
   CCTP_KIT_BRIDGE_TESTNET,
   CCTP_MESSAGE_TRANSMITTER_V2,
   CCTP_TOKEN_MESSENGER_V2,
@@ -44,7 +44,6 @@ import type {
   PreparedToolAction,
 } from '../../migrated/toolLayer.ts'
 
-const BASE_SEPOLIA_CHAIN_ID = 84532
 const CCTP_QUOTE_MAX_AGE_MS = 45_000
 const PREPARED_ACTION_TTL_MS = 60_000
 // SDK maxRetries counts total HTTP attempts. Keep a status check bounded while
@@ -104,12 +103,14 @@ export const CIRCLE_CUSTOM_BURN_WITH_HOOK_ABI = [{
   outputs: [],
 }] as const
 
-async function exactRoute(p: SendProvider, account: string, dependencies: CctpAdapterDependencies = {}): Promise<OfficialRoute> {
+async function exactRoute(p: SendProvider, account: string, destinationChainId: number, dependencies: CctpAdapterDependencies = {}): Promise<OfficialRoute> {
+  const expected = cctpDestinationByChainId(destinationChainId)
+  if (!expected) throw new Error('Unsupported CCTP destination chain')
   if (!isAddress(account)) throw new Error('A connected wallet account is required')
   const provider = dependencies.createProvider?.() ?? new (await import('@circle-fin/provider-cctp-v2')).CCTPV2BridgingProvider()
   const sourceEntry = provider.supportedChains.find((chain) => chain.type === 'evm' && chain.chainId === ARC.chainId)
-  const destinationEntry = provider.supportedChains.find((chain) => chain.type === 'evm' && chain.chainId === BASE_SEPOLIA_CHAIN_ID)
-  if (!sourceEntry || !destinationEntry || sourceEntry.type !== 'evm' || destinationEntry.type !== 'evm') throw new Error('Circle CCTP v2 Arc Testnet to Base Sepolia configuration is unavailable')
+  const destinationEntry = provider.supportedChains.find((chain) => chain.type === 'evm' && chain.chainId === expected.chainId)
+  if (!sourceEntry || !destinationEntry || sourceEntry.type !== 'evm' || destinationEntry.type !== 'evm') throw new Error(`Circle CCTP v2 Arc Testnet to ${expected.name} configuration is unavailable`)
   const source = sourceEntry as OfficialCctpChain
   const destination = destinationEntry as OfficialCctpChain
   if (!source.cctp?.contracts?.v2 || !destination.cctp?.contracts?.v2 || !source.usdcAddress || !destination.usdcAddress) throw new Error('Official Circle USDC CCTP v2 route metadata is incomplete')
@@ -118,14 +119,14 @@ async function exactRoute(p: SendProvider, account: string, dependencies: CctpAd
   if (!usdcRegistry || getAddress(source.usdcAddress) !== getAddress(usdcRegistry.address)) throw new Error('Official Circle Arc USDC conflicts with Makoto token registry; CCTP is stopped')
   if (source.cctp.contracts.v2.type !== 'split') throw new Error('Official Arc CCTP v2 token messenger configuration is unsupported')
   const tokenMessenger = getAddress(source.cctp.contracts.v2.tokenMessenger)
-  if (tokenMessenger !== getAddress(CCTP_TOKEN_MESSENGER_V2) || getAddress(destination.cctp.contracts.v2.tokenMessenger) !== getAddress(CCTP_TOKEN_MESSENGER_V2)) throw new Error('Official Circle Arc/Base TokenMessenger conflicts with Makoto CCTP registry; CCTP is stopped')
+  if (tokenMessenger !== getAddress(CCTP_TOKEN_MESSENGER_V2) || getAddress(destination.cctp.contracts.v2.tokenMessenger) !== getAddress(CCTP_TOKEN_MESSENGER_V2)) throw new Error('Official Circle Arc/destination TokenMessenger conflicts with Makoto CCTP registry; CCTP is stopped')
   if (getAddress(source.cctp.contracts.v2.messageTransmitter) !== getAddress(CCTP_MESSAGE_TRANSMITTER_V2) || getAddress(destination.cctp.contracts.v2.messageTransmitter) !== getAddress(CCTP_MESSAGE_TRANSMITTER_V2)) throw new Error('Official Circle CCTP v2 MessageTransmitter conflicts with the verified Arc/Base route; CCTP is stopped')
-  if (source.cctp.domain !== ARC_CCTP_DOMAIN || destination.cctp.domain !== BASE_SEPOLIA_CCTP_DOMAIN) throw new Error('Official Circle Arc/Base CCTP domains conflict with the verified route; CCTP is stopped')
-  if (getAddress(destination.usdcAddress) !== getAddress(BASE_SEPOLIA_USDC)) throw new Error('Official Circle Base Sepolia USDC conflicts with the verified route; CCTP is stopped')
+  if (source.cctp.domain !== ARC_CCTP_DOMAIN || destination.cctp.domain !== expected.domain) throw new Error('Official Circle Arc/destination CCTP domains conflict with the verified route; CCTP is stopped')
+  if (getAddress(destination.usdcAddress) !== expected.usdc) throw new Error('Official Circle destination USDC conflicts with the verified route; CCTP is stopped')
   if (!source.kitContracts?.bridge) throw new Error('Circle custom bridge contract is unavailable for Arc Testnet')
   const spender = getAddress(source.kitContracts.bridge)
   if (spender !== getAddress(CCTP_KIT_BRIDGE_TESTNET)) throw new Error('Official Circle Arc custom bridge conflicts with the verified route; CCTP is stopped')
-  if (!provider.supportsRoute(source, destination, 'USDC', true)) throw new Error('Circle does not currently support the Arc Testnet to Base Sepolia USDC forwarding route')
+  if (!provider.supportsRoute(source, destination, 'USDC', true)) throw new Error(`Circle does not currently support the Arc Testnet to ${expected.name} USDC forwarding route`)
 
   // The SDK stays bound to the connected EIP-1193 wallet. Developer-controlled
   // address context means the already-observed eth_accounts value is supplied
@@ -200,20 +201,20 @@ function semanticsFingerprint(kind: PreparedToolAction['kind'], semantics: CctpI
 }
 
 function assertFreshQuote(quote: BridgeToolQuote, now: number) {
-  if (quote.asset !== 'USDC' || quote.sourceChainId !== ARC.chainId || quote.destinationChainId !== BASE_SEPOLIA_CHAIN_ID) throw new Error('Unsupported CCTP asset or route')
+  if (quote.asset !== 'USDC' || quote.sourceChainId !== ARC.chainId || cctpDestinationByChainId(quote.destinationChainId)?.domain !== quote.destinationDomain) throw new Error('Unsupported CCTP asset or route')
   if (now < quote.quotedAt || now > quote.expiresAt) throw new Error('Circle CCTP fee observation expired; refresh the quote')
   if (quote.totalDebit !== quote.amount || quote.amount <= 0n || quote.maxFee !== quote.providerFee + quote.forwarderFee || quote.maxFee < 0n || quote.expectedReceive !== quote.amount - quote.maxFee || quote.expectedReceive <= 0n) throw new Error('Circle CCTP fee semantics are invalid')
 }
 
 export async function getOfficialCctpQuote(
   p: SendProvider,
-  input: { account: Address; amount: bigint; transferSpeed: CctpTransferSpeed; now?: number },
+  input: { account: Address; amount: bigint; destinationChainId: number; transferSpeed: CctpTransferSpeed; now?: number },
   dependencies: CctpAdapterDependencies = {},
 ): Promise<BridgeToolQuote> {
   const now = input.now ?? Date.now()
   if (input.amount <= 0n) throw new Error('Enter a positive USDC amount')
   if (input.transferSpeed !== 'FAST' && input.transferSpeed !== 'SLOW') throw new Error('Unsupported Circle CCTP transfer speed')
-  const route = await exactRoute(p, input.account, dependencies)
+  const route = await exactRoute(p, input.account, input.destinationChainId, dependencies)
   const params = routeParams(route, input.account, input.amount, input.transferSpeed)
   const fee = await route.provider.getMaxFee(params)
   if (fee.providerFee < 0n || fee.forwarderFee < 0n) throw new Error('Circle returned a negative CCTP fee')
@@ -222,7 +223,7 @@ export async function getOfficialCctpQuote(
   const quote: BridgeToolQuote = Object.freeze({
     account: getAddress(input.account),
     sourceChainId: ARC.chainId,
-    destinationChainId: BASE_SEPOLIA_CHAIN_ID,
+    destinationChainId: route.destination.chainId,
     destinationDomain: route.destination.cctp.domain,
     recipient: getAddress(input.account),
     spender: route.spender,
@@ -298,7 +299,7 @@ export async function prepareExactCctpApproval(
 ): Promise<PreparedToolAction> {
   assertFreshQuote(quote, now)
   if (currentAllowance >= quote.totalDebit) throw new Error('CCTP allowance is already sufficient')
-  const route = await exactRoute(p, quote.account, dependencies)
+  const route = await exactRoute(p, quote.account, quote.destinationChainId, dependencies)
   if (route.spender !== quote.spender) throw new Error('CCTP spender changed; request a new review')
   const data = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [route.spender, quote.totalDebit] })
   let decoded: ReturnType<typeof decodeFunctionData>
@@ -317,7 +318,7 @@ export async function prepareExactCctpApproval(
 
 export async function prepareOfficialCctpBurn(p: SendProvider, quote: BridgeToolQuote, now = Date.now(), dependencies: CctpAdapterDependencies = {}): Promise<PreparedToolAction> {
   assertFreshQuote(quote, now)
-  const route = await exactRoute(p, quote.account, dependencies)
+  const route = await exactRoute(p, quote.account, quote.destinationChainId, dependencies)
   if (route.spender !== quote.spender || quote.destinationDomain !== route.destination.cctp.domain) throw new Error('Official CCTP route or spender changed; request a new review')
   const params = {
     ...routeParams(route, quote.account, quote.amount, quote.transferSpeed),
@@ -423,7 +424,9 @@ export async function getOfficialCctpStatus(
   dependencies: CctpAdapterDependencies = {},
 ): Promise<CircleCctpStatus> {
   try {
-    const route = await exactRoute(p, input.account, dependencies)
+    const destination = cctpDestinationByDomain(input.destinationDomain)
+    if (!destination) throw new Error('Unsupported CCTP destination domain')
+    const route = await exactRoute(p, input.account, destination.chainId, dependencies)
     const result = await route.provider.fetchAttestation(
       sourceContext(route, input.account), input.burnHash,
       CCTP_STATUS_POLLING,

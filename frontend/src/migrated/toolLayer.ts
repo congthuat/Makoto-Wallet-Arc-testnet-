@@ -4,7 +4,7 @@ import { parseSendAmount, prepareSend, type PreparedSend, type SendProvider } fr
 import { _getRpcTimeoutMs } from '../lib/rpcTimeout.ts'
 import { rpcRead } from '../lib/arcRpc.ts'
 import { getAssetById, type SupportedAssetId } from './assets.ts'
-import { CCTP_KIT_BRIDGE_TESTNET } from './cctp.ts'
+import { CCTP_KIT_BRIDGE_TESTNET, DEFAULT_CCTP_DESTINATION, cctpDestinationByChainId } from './cctp.ts'
 import { createXyloQuote, minimumSwapOutput, prepareXyloSwapRequest, SWAP_DEADLINE_SECONDS, SWAP_QUOTE_MAX_AGE_MS, XYLO_ROUTER, xyloRouterAbi, type SwapQuote } from './swap.ts'
 import { buildUniswapSwapCalldata, createVenueQuote, PERMIT2, PERMIT2_EXPIRY_SECONDS, permit2Abi, permit2ApproveCalldata, quoterAbi, UNI_POOL_MANAGER, UNI_QUOTER, UNI_ROUTER, uniswapQuoteCall, type SwapVenue } from './uniswap.ts'
 import { ARCSWAP_PAIR, ARCSWAP_ROUTER, arcSwapCalldata, arcSwapQuoteCall, CURVE_POOLS, curvePoolAbi, curveQuoteCall, curveSwapCalldata, v2RouterAbi } from './dexVenues.ts'
@@ -23,7 +23,7 @@ export type CctpIntentSemantics = Readonly<{
   asset: 'USDC'
   amount: bigint
   expectedReceive: bigint
-  destinationChainId: 84532
+  destinationChainId: number
   destinationDomain: number
   recipient: Address
   spender: Address
@@ -52,7 +52,7 @@ export function nextSwapApproval(q: SwapToolQuote): SwapApprovalStep | undefined
 export type BridgeToolQuote = Readonly<{
   account: Address
   sourceChainId: typeof ARC.chainId
-  destinationChainId: 84532
+  destinationChainId: number
   destinationDomain: number
   recipient: Address
   spender: Address
@@ -297,11 +297,12 @@ export async function quoteSwap(p: SendProvider, input: { account: string; from:
 export async function quoteBridge(p: SendProvider, input: { account: string; amount: string; asset?: string; sourceChainId?: number; destinationChainId?: number; transferSpeed?: CctpTransferSpeed }, now = Date.now(), dependencies: CctpAdapterDependencies = {}): Promise<ToolResult<BridgeToolQuote>> {
   try {
     if (input.asset !== undefined && input.asset !== 'USDC') throw new Error('CCTP write execution supports USDC only')
-    if (input.sourceChainId !== undefined && input.sourceChainId !== ARC.chainId) throw new Error('Only Arc Testnet to Base Sepolia is supported')
-    if (input.destinationChainId !== undefined && input.destinationChainId !== 84532) throw new Error('Only Arc Testnet to Base Sepolia is supported')
+    if (input.sourceChainId !== undefined && input.sourceChainId !== ARC.chainId) throw new Error('Only Arc Testnet is supported as the CCTP source')
+    const destination = cctpDestinationByChainId(input.destinationChainId ?? DEFAULT_CCTP_DESTINATION.chainId)
+    if (!destination) throw new Error('Unsupported CCTP destination chain')
     const wallet = await requireArc(p, input.account)
     const amount = parseSendAmount(input.amount, 6)
-    const quote = await getOfficialCctpQuote(p, { account: wallet.account, amount, transferSpeed: input.transferSpeed ?? 'FAST', now }, dependencies)
+    const quote = await getOfficialCctpQuote(p, { account: wallet.account, amount, destinationChainId: destination.chainId, transferSpeed: input.transferSpeed ?? 'FAST', now }, dependencies)
     const balance = await readBalance(p, 'USDC', wallet.account)
     if (balance.status !== 'OK' || !balance.data || balance.data.units < quote.totalDebit) throw new Error('Insufficient USDC or balance unavailable')
     return ok(quote, 'Circle CCTP v2 official')

@@ -8,6 +8,7 @@
 //   explicit user review, and the user's own wallet signature.
 // - Tool outputs are untrusted data for the model and are size-bounded.
 const market = require('./marketData')
+const { DESTINATIONS, DESTINATION_NAMES, destinationName } = require('./cctpDestinations')
 
 const ARC_RPC = 'https://rpc.testnet.arc.io'
 const ARC_EXPLORER_API = 'https://explorer.testnet.arc.io/api/v2'
@@ -128,15 +129,18 @@ const TOOLS = {
   },
   get_bridge_fees: {
     source: 'Circle CCTP v2',
-    description: 'Read the current Circle CCTP v2 fees for bridging USDC from Arc Testnet to Base Sepolia (the only supported bridge route). Exact fees are re-quoted live during the user review.',
-    parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
-    async run() {
-      const response = await fetch(`${CIRCLE_IRIS}/v2/burn/USDC/fees/26/6?forward=true`, { signal: AbortSignal.timeout(8000), headers: { accept: 'application/json' } })
+    description: `Read the current Circle CCTP v2 fees for bridging USDC from Arc Testnet to a destination chain (supported: ${DESTINATION_NAMES.join(', ')}). Exact fees are re-quoted live during the user review.`,
+    parameters: { type: 'object', properties: { destination: { type: ['string', 'null'], enum: [...DESTINATION_NAMES, null], description: 'Destination chain; null means Base Sepolia.' } }, required: ['destination'], additionalProperties: false },
+    async run(args) {
+      const name = args?.destination ? destinationName(args.destination) : 'Base Sepolia'
+      if (!name) return { status: 'UNSUPPORTED', reason: `Supported destinations: ${DESTINATION_NAMES.join(', ')}` }
+      const domain = Object.keys(DESTINATIONS).find((key) => DESTINATIONS[key].name === name)
+      const response = await fetch(`${CIRCLE_IRIS}/v2/burn/USDC/fees/26/${domain}?forward=true`, { signal: AbortSignal.timeout(8000), headers: { accept: 'application/json' } })
       if (!response.ok) throw new Error('Circle fee request failed')
       const rows = await response.json()
       const pick = (threshold) => (Array.isArray(rows) ? rows.find((row) => Number(row?.finalityThreshold) === threshold) : undefined)
       const describe = (row) => row ? { minimumFeeBps: Number(row.minimumFee), forwardFeeUsdcMedian: row.forwardFee?.med != null ? round(Number(row.forwardFee.med) / 1e6, 6) : null } : 'unavailable'
-      return { status: 'OK', route: 'Arc Testnet → Base Sepolia (USDC only)', observedAt: nowIso(), fast: describe(pick(1000)), standard: describe(pick(2000)), note: 'Indicative only; the review screen fetches a fresh official quote.' }
+      return { status: 'OK', route: `Arc Testnet → ${name} (USDC only)`, observedAt: nowIso(), fast: describe(pick(1000)), standard: describe(pick(2000)), note: 'Indicative only; the review screen fetches a fresh official quote.' }
     },
   },
   get_market_overview: {
@@ -392,7 +396,7 @@ const TOOLS = {
   },
   propose_action: {
     source: 'Makoto planner',
-    description: 'Propose ONE wallet action for the user to review in Makoto: send (ERC-20 transfer on Arc), swap (USDC <-> EURC on Arc) or bridge (USDC Arc Testnet -> Base Sepolia). This executes NOTHING; Makoto validates it deterministically and the user must review and sign in their own wallet. Only call when the user clearly asked to do the action. Never use MAX/all — ask for an exact amount instead.',
+    description: 'Propose ONE wallet action for the user to review in Makoto: send (ERC-20 transfer on Arc), swap (USDC <-> EURC on Arc) or bridge (USDC from Arc Testnet to one supported Circle CCTP chain, set destination). This executes NOTHING; Makoto validates it deterministically and the user must review and sign in their own wallet. Only call when the user clearly asked to do the action. Never use MAX/all — ask for an exact amount instead.',
     parameters: {
       type: 'object',
       properties: {
@@ -402,8 +406,9 @@ const TOOLS = {
         recipient: { type: ['string', 'null'], description: 'Full 0x recipient address for send, otherwise null.' },
         recipient_contact: { type: ['string', 'null'], description: 'For send to a saved contact: the contact name exactly as listed in the user memory (Makoto resolves the address on the device). Otherwise null.' },
         output_asset: { type: ['string', 'null'], enum: ['USDC', 'EURC', null], description: 'Asset to receive for swap, otherwise null.' },
+        destination: { type: ['string', 'null'], enum: [...DESTINATION_NAMES, null], description: 'Bridge destination chain (source is always Arc Testnet); null means Base Sepolia. Null for send/swap.' },
       },
-      required: ['kind', 'asset', 'amount', 'recipient', 'recipient_contact', 'output_asset'],
+      required: ['kind', 'asset', 'amount', 'recipient', 'recipient_contact', 'output_asset', 'destination'],
       additionalProperties: false,
     },
     async run(args, ctx) {
@@ -432,8 +437,9 @@ const TOOLS = {
               recipient: { type: ['string', 'null'] },
               recipient_contact: { type: ['string', 'null'] },
               output_asset: { type: ['string', 'null'], enum: ['USDC', 'EURC', null] },
+              destination: { type: ['string', 'null'], enum: [...DESTINATION_NAMES, null] },
             },
-            required: ['kind', 'asset', 'amount', 'recipient', 'recipient_contact', 'output_asset'],
+            required: ['kind', 'asset', 'amount', 'recipient', 'recipient_contact', 'output_asset', 'destination'],
             additionalProperties: false,
           },
         },
@@ -506,8 +512,10 @@ function validateProposal(args) {
     if (output === asset) return { ok: false, reason: 'Choose a different output asset.' }
     return { ok: true, value: { kind, asset, amount, outputAsset: output } }
   }
-  if (asset !== 'USDC') return { ok: false, reason: 'Bridge supports USDC only (Arc Testnet -> Base Sepolia).' }
-  return { ok: true, value: { kind, asset: 'USDC', amount, destination: 'Base Sepolia' } }
+  if (asset !== 'USDC') return { ok: false, reason: 'Bridge supports USDC only (from Arc Testnet).' }
+  const destination = args.destination ? destinationName(args.destination) : 'Base Sepolia'
+  if (!destination) return { ok: false, reason: `Unsupported bridge destination. Supported: ${DESTINATION_NAMES.join(', ')}` }
+  return { ok: true, value: { kind, asset: 'USDC', amount, destination } }
 }
 
 const TASK_PRICE_ASSETS = ['BTC', 'ETH', 'SOL', 'USDC', 'EURC']

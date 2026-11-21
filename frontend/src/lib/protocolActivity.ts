@@ -75,7 +75,7 @@ export async function checkBridgeRecord(p: SendProvider, record: BridgeRecord, f
     let destinationStatus: string | undefined
     try {
       const destinationResponse = await fetcher(
-        api(`cctp/destination?txHash=${destinationHash}&recipient=${record.account}&minimumUnits=${record.expectedReceiveUnits}`),
+        api(`cctp/destination?txHash=${destinationHash}&recipient=${record.account}&minimumUnits=${record.expectedReceiveUnits}&domain=${record.destinationDomain}`),
         { cache: 'no-store', signal: destController.signal },
       )
       if (!destinationResponse.ok) {

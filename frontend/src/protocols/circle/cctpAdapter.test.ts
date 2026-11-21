@@ -64,7 +64,7 @@ function fixture(burn = false) {
 }
 
 async function quote(f: ReturnType<typeof fixture>, speed: 'FAST' | 'SLOW' = 'FAST', now = Date.now()): Promise<BridgeToolQuote> {
-  return withMockArcRpc(() => getOfficialCctpQuote(f.p, { account, amount, transferSpeed: speed, now }, { createProvider: f.createProvider }),
+  return withMockArcRpc(() => getOfficialCctpQuote(f.p, { account, amount, destinationChainId: 84532, transferSpeed: speed, now }, { createProvider: f.createProvider }),
     () => false, { allowance: f.state.allowance, balance: f.state.balance })
 }
 

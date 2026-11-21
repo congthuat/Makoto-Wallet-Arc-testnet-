@@ -6,6 +6,7 @@ import { AgentSwapCard } from '../components/AgentSwapCard'
 import { venueFromText } from '../components/VenuePicker'
 import { VENUE_LABEL, type SwapVenueChoice } from '../migrated/uniswap.ts'
 import { AgentBridgeCard } from '../components/AgentBridgeCard'
+import { CCTP_DESTINATIONS, cctpDestinationByName } from '../migrated/cctp'
 import type { CctpTransferSpeed } from '../migrated/toolLayer'
 import { useWallet } from '../lib/store'
 import { ARC, TOKENS, ensureArcNetwork, fmtAmt, getProvider, isAddress, short, usd } from '../lib/wallet'
@@ -327,7 +328,7 @@ function PreSignSummary({ flow }: { flow: Flow }) {
     ? (vi ? `Bạn sắp gửi ${p.amount} ${p.asset} cho ${who} trên Arc Testnet.${fee} Giao dịch blockchain không thể hoàn tác.` : `You are about to send ${p.amount} ${p.asset} to ${who} on Arc Testnet.${fee} Blockchain transfers cannot be reversed.`)
     : flow.intent === 'swap'
       ? (vi ? `Bạn sắp đổi ${p.amount} ${p.asset} sang ${p.toAsset} trên Arc ${p.venue && p.venue !== 'best' ? `qua ${VENUE_LABEL[p.venue]}` : '(tự chọn sàn giá tốt nhất: XyloNet, Uniswap, Curve hoặc Arc Swap)'}. Số nhận cuối cùng theo báo giá trực tiếp và mức trượt giá bạn chọn.` : `You are about to swap ${p.amount} ${p.asset} to ${p.toAsset} on Arc ${p.venue && p.venue !== 'best' ? `via ${VENUE_LABEL[p.venue]}` : '(best price of XyloNet, Uniswap, Curve or Arc Swap)'}. The final amount follows the live quote and your slippage.`)
-      : (vi ? `Bạn sắp chuyển ${p.amount} USDC từ Arc Testnet sang Base Sepolia qua Circle CCTP. Có thể cần 2 lần ký (phê duyệt và chuyển); tiền tới đích sau khi Circle xác nhận.` : `You are about to bridge ${p.amount} USDC from Arc Testnet to Base Sepolia via Circle CCTP. It may need 2 signatures (approval and transfer); funds arrive after Circle confirms.`)
+      : (vi ? `Bạn sắp chuyển ${p.amount} USDC từ Arc Testnet sang ${p.dest || 'Base Sepolia'} qua Circle CCTP. Có thể cần 2 lần ký (phê duyệt và chuyển); tiền tới đích sau khi Circle xác nhận.` : `You are about to bridge ${p.amount} USDC from Arc Testnet to ${p.dest || 'Base Sepolia'} via Circle CCTP. It may need 2 signatures (approval and transfer); funds arrive after Circle confirms.`)
   return <p data-presign-summary className="rounded-lg border border-neon-500/20 bg-neon-500/[0.05] px-3 py-2 text-[12.5px] leading-relaxed">{text}</p>
 }
 
@@ -357,7 +358,7 @@ function ReviewCard({ msg, onChange, onSlipChange, onSpeedChange, onConfirm, onC
   if (!(amt > 0)) errs.push('Enter an amount')
   if (f.intent === 'send' && !isAddress(p.recipient)) errs.push('Add a valid 0x recipient address')
   if (f.intent === 'swap' && p.toAsset === p.asset) errs.push('Choose a different asset to receive')
-  if (f.intent === 'bridge' && p.dest !== 'Base Sepolia') errs.push('Only Arc Testnet → Base Sepolia is supported.')
+  if (f.intent === 'bridge' && !cctpDestinationByName(p.dest)) errs.push('Choose a supported destination chain.')
   const field = 'h-9 w-full min-w-0 px-2.5 rounded-lg bg-black/30 border border-white/[0.08] text-[13px] disabled:opacity-100 disabled:bg-transparent disabled:border-transparent disabled:px-0'
   const assets = f.intent === 'bridge' ? ['USDC'] : TOKENS.map((t) => t.sym)
   const title = f.intent === 'send' ? 'Transfer' : f.intent === 'swap' ? 'Swap' : 'Bridge'
@@ -400,7 +401,10 @@ function ReviewCard({ msg, onChange, onSlipChange, onSpeedChange, onConfirm, onC
           <span className={T.mute}>{tr('Source')}</span>
           <span className="h-9 flex items-center">{ARC.name}</span>
           <span className={T.mute}>{tr('Destination')}</span>
-          <span id={`${msg.id}-dest`} className="h-9 flex items-center">Base Sepolia</span>
+          <select id={`${msg.id}-dest`} aria-label={tr('Destination')} disabled={locked} value={cctpDestinationByName(p.dest)?.name ?? p.dest} onChange={(e) => onChange({ dest: e.target.value })} className={field}>
+            {!cctpDestinationByName(p.dest) && <option value={p.dest} className="bg-[#17171d]">{p.dest || '—'}</option>}
+            {CCTP_DESTINATIONS.map((d) => <option key={d.chainId} value={d.name} className="bg-[#17171d]">{d.name}</option>)}
+          </select>
         </>}
         {f.intent !== 'bridge' && <>
           <span className={T.mute}>{tr('Network')}</span>
@@ -745,7 +749,7 @@ export default function AgentPage() {
     }
     const params: Params = a.kind === 'send' ? { ...BASE_PARAMS, asset: a.asset ?? 'USDC', amount: a.amount ?? '', recipient: a.recipient ?? '' }
       : a.kind === 'swap' ? { ...BASE_PARAMS, asset: a.asset ?? 'USDC', amount: a.amount ?? '', toAsset: a.outputAsset ?? 'EURC' }
-        : { ...BASE_PARAMS, asset: 'USDC', amount: a.amount ?? '', dest: a.destinationChain ?? 'Base Sepolia' }
+        : { ...BASE_PARAMS, asset: 'USDC', amount: a.amount ?? '', dest: a.destinationChain ? cctpDestinationByName(a.destinationChain)?.name ?? a.destinationChain : 'Base Sepolia' }
     const flowText = built.contactName ? `${text}${text ? '\n\n' : ''}${vi ? `Người nhận: ${built.contactName} (danh bạ trên thiết bị này).` : `Recipient: ${built.contactName} (contacts on this device).`}` : text
     return { ...makeFlowMsg(a.kind, params, flowText, liveEvidence), source: 'REAL_PROVIDER', conversation: true, aiProposal: true, ...extra }
   }
@@ -899,8 +903,8 @@ export default function AgentPage() {
       }
       if (a.kind === 'send') return flow('send', { ...base, asset: a.asset ?? 'USDC', amount: a.amount ?? '', recipient: a.recipient ?? '' }, 'I parsed the transfer locally. Review the parameters before anything reaches your wallet.')
       if (a.kind === 'swap') return flow('swap', { ...base, asset: a.asset ?? 'USDC', amount: a.amount ?? '', toAsset: a.outputAsset ?? 'EURC' }, 'I parsed the swap locally. A fresh quote and safety revalidation are still required before wallet confirmation.')
-      if ((a.sourceChain && a.sourceChain !== ARC.name) || (a.destinationChain && a.destinationChain !== 'Base Sepolia')) return { id: nid(), role: 'agent', text: 'Only Arc Testnet → Base Sepolia is supported.' }
-      return flow('bridge', { ...base, asset: a.asset ?? 'USDC', amount: a.amount ?? '', dest: a.destinationChain ?? 'Base Sepolia' }, 'I parsed the bridge locally. Source submission and destination completion remain separate states.')
+      if ((a.sourceChain && a.sourceChain !== ARC.name) || (a.destinationChain && !cctpDestinationByName(a.destinationChain))) return { id: nid(), role: 'agent', text: `Bridging works from Arc Testnet to: ${CCTP_DESTINATIONS.map((d) => d.short).join(', ')}.` }
+      return flow('bridge', { ...base, asset: a.asset ?? 'USDC', amount: a.amount ?? '', dest: cctpDestinationByName(a.destinationChain)?.name ?? 'Base Sepolia' }, 'I parsed the bridge locally. Source submission and destination completion remain separate states.')
     }
     if (brain.intent.kind === 'safety-capabilities') return { id: nid(), role: 'agent', text: 'Makoto prepares actions but never signs for you. Every write must be reviewed again immediately before the connected wallet is opened.', rows: [['Policy', 'Prepare-only Agent'], ['Signing', 'User wallet only'], ['Revalidation', 'Required before wallet request'], ['Bridge completion', 'Destination evidence required']] }
     const sc = pickScenario(q)
@@ -1196,7 +1200,7 @@ export default function AgentPage() {
                   // bridge
                   return (
                     <AgentBridgeCard
-                      params={{ account: w.address, amount: p.amount, transferSpeed: f.execSpeed ?? 'FAST' as CctpTransferSpeed }}
+                      params={{ account: w.address, amount: p.amount, transferSpeed: f.execSpeed ?? 'FAST' as CctpTransferSpeed, destinationChainId: cctpDestinationByName(p.dest)?.chainId }}
                       onDone={doneExec}
                       onCancel={dismissExec}
                     />

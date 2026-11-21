@@ -1,3 +1,4 @@
+import { cctpDestinationFromText } from '../migrated/cctp.ts'
 import type { BrainIntent, BrainLocale, BrainPreparation } from './types'
 
 const FULL_ADDRESS = /0x[a-fA-F0-9]{40}/
@@ -43,12 +44,19 @@ function parsePreparation(raw: string, text: string): BrainPreparation | undefin
     return Object.freeze({ kind: 'swap', rawUserText: raw, amount: amount === 'MAX' ? undefined : amount, maxRequested: amount === 'MAX', asset: input, outputAsset: output })
   }
 
-  const vietnameseChainTransfer = asset === 'USDC' && /(?:^|\s)chuyển\s+/.test(text) && /(?:^|\s)(?:sang|tới|đến)\s+(?:base\s+sepolia|arc\s+testnet)\b/.test(text) && !ADDRESS_LIKE.test(raw)
+  const otherDestination = cctpDestinationFromText(text)
+  const vietnameseChainTransfer = asset === 'USDC' && /(?:^|\s)chuyển\s+/.test(text) && (/(?:^|\s)(?:sang|tới|đến)\s+(?:base\s+sepolia|arc\s+testnet)\b/.test(text) || (!!otherDestination && /(?:^|\s)(?:sang|tới|đến|qua)\s+/.test(text))) && !ADDRESS_LIKE.test(raw)
   if (has(text, ['bridge', 'chuyển chuỗi', 'cross-chain', 'cross chain']) || vietnameseChainTransfer) {
     const chains = chainsOf(text)
     let sourceChain: BrainPreparation['sourceChain']
     let destinationChain: BrainPreparation['destinationChain']
-    if (chains.arc && chains.base) {
+    if (otherDestination && otherDestination.chainId !== 84532) {
+      const arcPos = text.search(/\barc\b/)
+      const otherPos = text.indexOf(otherDestination.short.toLowerCase().split(' ')[0])
+      const reversed = arcPos >= 0 && otherPos >= 0 && otherPos < arcPos && /(?:from|từ)\s+$/.test(text.slice(0, otherPos))
+      sourceChain = reversed ? otherDestination.name : 'Arc Testnet'
+      destinationChain = reversed ? 'Arc Testnet' : otherDestination.name
+    } else if (chains.arc && chains.base) {
       const arcPos = text.indexOf('arc')
       const basePos = text.indexOf('base')
       sourceChain = arcPos <= basePos ? 'Arc Testnet' : 'Base Sepolia'

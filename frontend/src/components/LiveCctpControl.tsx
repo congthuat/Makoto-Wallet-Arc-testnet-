@@ -13,16 +13,17 @@ import { withRpcTimeout, CCTP_STATUS_TIMEOUT_MS } from '../lib/rpcTimeout.ts'
 import { Button, T } from './wallet/ui.tsx'
 import { SuccessBurst } from './wallet/SuccessBurst.tsx'
 import type { BridgeRecord } from '../lib/protocolActivity.ts'
+import { DEFAULT_CCTP_DESTINATION, cctpDestinationByChainId, cctpDestinationByDomain, cctpExplorerTx } from '../migrated/cctp.ts'
 import { hasSavedProtocolCompletion } from '../lib/protocolActivity.ts'
 import { createStrategyRun, recoverStrategyRun, restoreStrategyRun, saveStrategyRun, transitionStrategy, type StrategyEvent, type StrategyReceiptBinding, type StrategyRun } from '../migrated/strategyController.ts'
 
 type Stage = 'idle' | 'review-approval' | 'approval-confirmed' | 'review-burn' | 'source-pending' | 'source-unknown' | 'source-confirmed' | 'attestation-pending' | 'attestation-available' | 'forwarding-pending' | 'forwarding-failed' | 'destination-pending' | 'destination-confirmed' | 'destination-failed' | 'status-unavailable' | 'failed' | 'rejected'
 export type LiveQuote = Readonly<{ amount: bigint; expectedReceive: bigint; maxFee: bigint; speed: CctpTransferSpeed }>
-type LiveCctpProps = { account: string; amount: string; transferSpeed: CctpTransferSpeed; onSourceConfirmed: () => Promise<unknown>; onComplete: () => void; onQuoteChange?: (quote?: LiveQuote) => void }
+type LiveCctpProps = { account: string; amount: string; transferSpeed: CctpTransferSpeed; destinationChainId?: number; onSourceConfirmed: () => Promise<unknown>; onComplete: () => void; onQuoteChange?: (quote?: LiveQuote) => void }
 type Operation = { generation: number; account: string; chainId?: number; input?: string; run?: StrategyRun; saved: string | null | undefined }
 
-/** Arc Testnet → Base Sepolia USDC CCTP v2 only. Each approval and burn needs its own review and click. */
-export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfirmed, onComplete, onQuoteChange }: LiveCctpProps) {
+/** Arc Testnet → one verified CCTP v2 forwarding destination (USDC only). Each approval and burn needs its own review and click. */
+export function LiveCctpControl({ account, amount, transferSpeed, destinationChainId, onSourceConfirmed, onComplete, onQuoteChange }: LiveCctpProps) {
   const { upsertBridge, bridgeRecords, walletChainId } = useWallet()
   const [tr, lang] = useT()
   const say = (en: string, vn: string) => lang === 'vi' ? vn : en
@@ -47,7 +48,11 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
   const activityRecords = useRef(bridgeRecords)
   activityRecords.current = Array.isArray(bridgeRecords) ? bridgeRecords : []
   const normalizedAccount = account.toLowerCase()
-  const input = `${normalizedAccount}:${amount}:${transferSpeed}`
+  const selectedDestination = cctpDestinationByChainId(destinationChainId) ?? DEFAULT_CCTP_DESTINATION
+  const destChainId = selectedDestination.chainId
+  const shownDest = cctpDestinationByDomain(run.current?.binding?.destinationDomain) ?? selectedDestination
+  const dn = shownDest.short
+  const input = `${normalizedAccount}:${amount}:${transferSpeed}:${destChainId}`
   const context = useRef({ account: normalizedAccount, chainId: walletChainId, input })
   context.current = { account: normalizedAccount, chainId: walletChainId, input }
 
@@ -201,7 +206,7 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
       finalityThreshold: action.cctp?.finalityThreshold?.toString(),
     }),
   })
-  const captureInput = () => `${account.toLowerCase()}:${amount}:${transferSpeed}`
+  const captureInput = () => `${account.toLowerCase()}:${amount}:${transferSpeed}:${destChainId}`
 
   async function walletContext(p: NonNullable<ReturnType<typeof getProvider>>) {
     const wallet = await readWallet(p)
@@ -263,7 +268,7 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
       if (!p) throw new Error('Wallet provider unavailable.')
       await walletContext(p)
       if (!isCurrent(op)) return
-      const result = await quoteBridge(p, { account, amount, asset: 'USDC', sourceChainId: ARC.chainId, destinationChainId: 84532, transferSpeed })
+      const result = await quoteBridge(p, { account, amount, asset: 'USDC', sourceChainId: ARC.chainId, destinationChainId: destChainId, transferSpeed })
       if (!isCurrent(op)) return
       if (result.status !== 'OK' || !result.data) throw new Error(result.reason ?? 'Official Circle fee quote unavailable.')
       const q = result.data
@@ -297,7 +302,7 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
     const approvalHash = run.current?.phase === 'EXPIRED' ? run.current.approvalReceipt?.hash
       : run.current?.step === 'approval' && ['REVALIDATING', 'REQUOTING'].includes(run.current.phase) ? run.current.hash : undefined
     if (!approvalHash) return
-    const key = `${approvalHash.toLowerCase()}:${normalizedAccount}:${walletChainId}:${amount}:${transferSpeed}`
+    const key = `${approvalHash.toLowerCase()}:${normalizedAccount}:${walletChainId}:${amount}:${transferSpeed}:${destChainId}`
     if (autoApprovalContinuation.current === key) return
     autoApprovalContinuation.current = key
     // Receipt-confirmed approval only authorizes fresh reads and a new burn review.
@@ -305,7 +310,7 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
     void start()
     // start is scoped by this input and the generation/checkpoint guards above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, busy, hash, normalizedAccount, walletChainId, amount, transferSpeed])
+  }, [stage, busy, hash, normalizedAccount, walletChainId, amount, transferSpeed, destChainId])
 
   async function reconcileDestination(p: NonNullable<ReturnType<typeof getProvider>>, burnHash: Hex, binding: StrategyReceiptBinding, baseRecord: BridgeRecord, op: Operation) {
     if (!isCurrent(op) || op.run?.hash?.toLowerCase() !== burnHash.toLowerCase() || op.run.binding !== binding) return
@@ -340,21 +345,21 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
     // source hash and destination hash are preserved; no new burn is started.
     const data = await withRpcTimeout(
       (async () => {
-        const resp = await fetch(api(`cctp/destination?txHash=${status.forwardTxHash}&recipient=${binding.recipient}&minimumUnits=${binding.expectedReceiveUnits}`), { cache: 'no-store' })
+        const resp = await fetch(api(`cctp/destination?txHash=${status.forwardTxHash}&recipient=${binding.recipient}&minimumUnits=${binding.expectedReceiveUnits}&domain=${binding.destinationDomain}`), { cache: 'no-store' })
         return resp.ok ? await resp.json() as { status?: string } : undefined
       })(),
       CCTP_STATUS_TIMEOUT_MS,
-      'Base destination fetch',
+      'Destination fetch',
     ).catch(() => undefined)
     if (!isCurrent(op)) return
     if (!data || !['confirmed', 'failed', 'pending'].includes(data.status ?? '')) {
       if (!completedRecovery) setStage('status-unavailable')
-      setError('Base destination evidence is unavailable. Check the saved transfer again later.')
+      setError('Destination evidence is unavailable. Check the saved transfer again later.')
       if (!completedRecovery) recordActivity({ ...baseRecord, destinationHash: status.forwardTxHash }, op)
       return
     }
     const destinationState = data?.status === 'confirmed' ? 'destination-confirmed' : data?.status === 'failed' ? 'destination-failed' : 'destination-pending'
-    if (completedRecovery && destinationState !== 'destination-confirmed') { setError('Base destination evidence is unavailable. Check the saved transfer again later.'); return }
+    if (completedRecovery && destinationState !== 'destination-confirmed') { setError('Destination evidence is unavailable. Check the saved transfer again later.'); return }
     if (destinationState === 'destination-confirmed' && run.current && ['SOURCE_CONFIRMED', 'DESTINATION_PENDING'].includes(run.current.phase)) advance({ type: 'destination-confirmed', now: Date.now() }, op)
     else if (destinationState === 'destination-failed' && run.current && ['SOURCE_CONFIRMED', 'DESTINATION_PENDING'].includes(run.current.phase)) advance({ type: 'destination-failed', now: Date.now() }, op)
     else if (destinationState === 'destination-pending' && run.current && ['SOURCE_CONFIRMED', 'DESTINATION_PENDING'].includes(run.current.phase)) advance({ type: 'destination-pending', now: Date.now() }, op)
@@ -374,7 +379,7 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
       if (!isCurrent(op)) return
       let freshQuote = quote
       if (Date.now() >= quote.expiresAt) {
-        const freshQuoteResult = await quoteBridge(p, { account, amount, asset: 'USDC', sourceChainId: ARC.chainId, destinationChainId: 84532, transferSpeed })
+        const freshQuoteResult = await quoteBridge(p, { account, amount, asset: 'USDC', sourceChainId: ARC.chainId, destinationChainId: destChainId, transferSpeed })
         if (!isCurrent(op)) return
         if (freshQuoteResult.status !== 'OK' || !freshQuoteResult.data) throw new Error(freshQuoteResult.reason ?? 'Official Circle fee quote unavailable.')
         freshQuote = freshQuoteResult.data
@@ -562,7 +567,7 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
     if (m.includes('quote expired') || m.includes('expired') || m.includes('circle cctp fee observation expired')) return 'Báo giá đã hết hạn. Lấy báo giá mới. [QUOTE_EXPIRED]'
     if (m.includes('policy') || m.includes('must stop') || m.includes('policy rejected')) return 'Chính sách an toàn đã dừng giao dịch. Kiểm tra số dư và ủy quyền. [POLICY_REJECTED]'
     if (m.includes('cctp status') || m.includes('circle status')) return 'Không lấy được trạng thái CCTP từ Circle. Thử lại sau. [CCTP_STATUS_UNAVAILABLE]'
-    if (m.includes('destination') && m.includes('unavailable')) return 'Không lấy được bằng chứng đích Base Sepolia. Thử lại sau. [DEST_UNAVAILABLE]'
+    if (m.includes('destination') && m.includes('unavailable')) return `Không lấy được bằng chứng đích ${shownDest.name}. Thử lại sau. [DEST_UNAVAILABLE]`
     if (m.includes('wallet session expired') || m.includes('reconnect your wallet')) return 'Phiên làm việc ví đã hết hạn. Vui lòng ngắt kết nối và kết nối lại. [SESSION_EXPIRED]'
     if (m.includes('not on arc testnet') || m.includes('switch to arc testnet')) return 'Ví đang ở mạng sai. Chuyển sang Arc Testnet trong ví của bạn. [WRONG_CHAIN]'
     // SDK transport failures (e.g. "RPC endpoint error on Arc Testnet") are not account errors.
@@ -570,7 +575,7 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
     // Only walletContext()'s exact wrong-account message; other errors mentioning "Arc Testnet" are not account mismatches.
     if (m.includes('connect the reviewed account')) return 'Vui lòng kết nối đúng tài khoản trên Arc Testnet. [WRONG_ACCOUNT]'
     if (m.includes('stale cctp operation') || m.includes('checkpoint')) return 'Trạng thái CCTP đã thay đổi. Vui lòng bắt đầu lại.'
-    if (m.includes('circle cctp v2 arc testnet to base sepolia configuration')) return 'Cấu hình route CCTP Circle chưa sẵn sàng.'
+    if (m.includes('circle cctp v2 arc testnet to') && m.includes('configuration')) return 'Cấu hình route CCTP Circle chưa sẵn sàng.'
     if (m.includes('arc usdc conflicts') || m.includes('messenger conflicts') || m.includes('transmitter conflicts')) return 'Cấu hình CCTP xung đột với registry Makoto. Liên hệ hỗ trợ. [ROUTE_CONFLICT]'
     if (m.includes('circle burn fields differ') || m.includes('calldata does not match')) return 'Dữ liệu lệnh đốt Circle không khớp với giao dịch đã xem xét. [BURN_MISMATCH]'
     if (m.includes('amount, account or transfer speed changed')) return 'Thông số thay đổi. Xem xét lại.'
@@ -583,7 +588,7 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
     return 'Không thể lấy trạng thái CCTP. Vui lòng thử lại. [CCTP_UNKNOWN_ERROR]'
   }
   return <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5 text-[13px] space-y-3" aria-live="polite">
-    <div className="font-semibold">{say('Direct Circle CCTP v2 · Arc → Base Sepolia', 'Circle CCTP v2 trực tiếp · Arc → Base Sepolia')}</div>
+    <div className="font-semibold">{say(`Direct Circle CCTP v2 · Arc → ${shownDest.name}`, `Circle CCTP v2 trực tiếp · Arc → ${shownDest.name}`)}</div>
     {quote && <div className={T.sub}>
       <p>{say('Gross USDC amount', 'Số USDC chuyển')} {formatUnits(quote.amount, 6)} · {say('Receive floor', 'Nhận tối thiểu')} {formatUnits(quote.expectedReceive, 6)} USDC</p>
       <p>{say('Circle maximum fee', 'Phí Circle tối đa')} {formatUnits(quote.maxFee, 6)} USDC · {say('Speed', 'Tốc độ')} {quote.transferSpeed === 'FAST' ? say('Fast', 'Nhanh') : say('Standard', 'Tiêu chuẩn')}</p>
@@ -591,25 +596,25 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
     {prepared && liveMaxGas && <p className={T.sub}>{say('Estimated Arc gas ceiling', 'Phí gas Arc ước tính tối đa')}: {liveMaxGas} USDC</p>}
     {stage === 'review-approval' && quote && <p>{say('Exact finite USDC approval', 'Phê duyệt USDC hữu hạn chính xác')}: {formatUnits(quote.totalDebit, 6)} USDC. {say('This is a separate wallet confirmation.', 'Đây là xác nhận ví riêng.')}</p>}
     {stage === 'approval-confirmed' && <p>{say('USDC approval confirmed. Preparing a fresh Circle quote and burn review; the burn still needs your separate wallet confirmation.', 'Đã xác nhận cấp quyền USDC. Đang chuẩn bị báo giá Circle mới và bước xem lại lệnh đốt; bạn vẫn cần xác nhận lệnh đốt riêng trong ví.')}</p>}
-    {stage === 'review-burn' && <p>{say('Review the Circle CCTP source burn. Destination completes only after Base receipt and USDC transfer evidence.', 'Xem lại lệnh đốt CCTP của Circle. Chỉ hoàn tất khi có biên nhận Base và bằng chứng chuyển USDC.')}</p>}
+    {stage === 'review-burn' && <p>{say(`Review the Circle CCTP source burn. Destination completes only after ${dn} receipt and USDC transfer evidence.`, `Xem lại lệnh đốt CCTP của Circle. Chỉ hoàn tất khi có biên nhận ${dn} và bằng chứng chuyển USDC.`)}</p>}
     {stage === 'source-pending' && <p>{say('Awaiting Arc receipt. Do not submit this transfer again.', 'Đang chờ biên nhận Arc. Không gửi lại giao dịch này.')}</p>}
     {stage === 'source-unknown' && <p>{hash
       ? say('Source status is unknown. Check the saved hash before retrying.', 'Chưa rõ trạng thái nguồn. Kiểm tra mã giao dịch đã lưu trước khi thử lại.')
       : say('The wallet did not return a transaction hash. Check your wallet history or explorer before any new attempt. Do not resubmit.', 'Ví không trả về mã giao dịch. Hãy kiểm tra lịch sử trong ví hoặc trình khám phá trước khi thử lại. Không gửi lại giao dịch.')}</p>}
-    {stage === 'source-confirmed' && <p>{say('Arc source confirmed. Circle attestation and Base destination are still pending.', 'Nguồn Arc đã xác nhận. Chứng thực Circle và đích Base vẫn đang chờ.')}</p>}
+    {stage === 'source-confirmed' && <p>{say(`Arc source confirmed. Circle attestation and ${dn} destination are still pending.`, `Nguồn Arc đã xác nhận. Chứng thực Circle và đích ${dn} vẫn đang chờ.`)}</p>}
     {stage === 'attestation-pending' && <p>{say('Circle attestation is pending.', 'Chứng thực Circle đang chờ.')}</p>}
     {stage === 'attestation-available' && <p>{say('Circle attestation is available. Waiting for its forwarded transaction.', 'Đã có chứng thực Circle. Đang chờ giao dịch chuyển tiếp.')}</p>}
     {stage === 'forwarding-pending' && <p>{say('Circle forwarding is pending.', 'Chuyển tiếp Circle đang chờ.')}</p>}
     {stage === 'forwarding-failed' && <p>{say('Circle forwarding failed. The Arc burn remains confirmed; destination funds are not confirmed.', 'Chuyển tiếp Circle thất bại. Lệnh đốt Arc vẫn đã xác nhận; tiền ở đích chưa được xác nhận.')}</p>}
-    {stage === 'destination-pending' && <p>{say('Forward transaction observed. Waiting for verified Base receipt and USDC transfer.', 'Đã thấy giao dịch chuyển tiếp. Đang chờ biên nhận Base và chuyển USDC được xác minh.')}</p>}
+    {stage === 'destination-pending' && <p>{say(`Forward transaction observed. Waiting for verified ${dn} receipt and USDC transfer.`, `Đã thấy giao dịch chuyển tiếp. Đang chờ biên nhận ${dn} và chuyển USDC được xác minh.`)}</p>}
     {stage === 'destination-confirmed' && <div className="py-2"><SuccessBurst size={52} label={say('Bridge confirmed', 'Chuyển chuỗi đã xác nhận')} /></div>}
-    {stage === 'destination-confirmed' && <p>{say('Destination confirmed by Base receipt and matching USDC transfer.', 'Đích đã xác nhận bằng biên nhận Base và chuyển USDC phù hợp.')}</p>}
-    {stage === 'destination-failed' && <p>{say('The forwarded Base transaction failed. The Arc burn remains confirmed.', 'Giao dịch Base chuyển tiếp thất bại. Lệnh đốt Arc vẫn đã xác nhận.')}</p>}
+    {stage === 'destination-confirmed' && <p>{say(`Destination confirmed by ${dn} receipt and matching USDC transfer.`, `Đích đã xác nhận bằng biên nhận ${dn} và chuyển USDC phù hợp.`)}</p>}
+    {stage === 'destination-failed' && <p>{say(`The forwarded ${dn} transaction failed. The Arc burn remains confirmed.`, `Giao dịch ${dn} chuyển tiếp thất bại. Lệnh đốt Arc vẫn đã xác nhận.`)}</p>}
     {stage === 'status-unavailable' && <p>{say('Circle status or destination evidence is unavailable. The confirmed Arc burn remains pending destination evidence.', 'Chưa thể lấy trạng thái Circle hoặc bằng chứng đích. Lệnh đốt Arc đã xác nhận nhưng vẫn thiếu bằng chứng đích.')}</p>}
     {stage === 'failed' && <p>{say('Arc source transaction failed.', 'Giao dịch nguồn Arc thất bại.')}</p>}
     {stage === 'rejected' && <p>{say('Wallet request rejected for this step. No transaction was submitted; any earlier confirmed approval is retained.', 'Yêu cầu ví ở bước này đã bị từ chối, chưa gửi giao dịch. Bằng chứng phê duyệt đã xác nhận trước đó vẫn được giữ lại.')}</p>}
     {hash && <a className="block break-all text-neon-300" href={explorerTx(hash)} target="_blank" rel="noreferrer">{hash}</a>}
-    {destinationHash && <a className="block break-all text-neon-300" href={`https://sepolia.basescan.org/tx/${destinationHash}`} target="_blank" rel="noreferrer">{destinationHash}</a>}
+    {destinationHash && <a className="block break-all text-neon-300" href={cctpExplorerTx(shownDest, destinationHash)} target="_blank" rel="noreferrer">{destinationHash}</a>}
     {error && <p className="text-rose-300 break-words">{errorText}</p>}
     {activityUnavailable && <p className="text-rose-300 break-words">{say('Activity could not be updated. The transaction hash remains on this page for status checks.', 'Chưa thể cập nhật Hoạt động. Mã giao dịch vẫn còn trên trang này để kiểm tra trạng thái.')}</p>}
     {checkpointUnavailable && <p className="text-rose-300 break-words">{say('Recovery could not be saved. Keep this transaction hash and check its status before leaving this page. Do not resubmit.', 'Chưa thể lưu trạng thái khôi phục. Hãy giữ mã giao dịch và kiểm tra trạng thái trước khi rời trang. Không gửi lại.')}</p>}
@@ -627,6 +632,6 @@ export function LiveCctpControl({ account, amount, transferSpeed, onSourceConfir
     )}
     {stage === 'destination-confirmed' && <Button variant="primary" disabled={busy} onClick={complete}>{say('Done', 'Hoàn tất')}</Button>}
     {(stage === 'review-approval' || stage === 'review-burn') && <div className="flex gap-2 flex-wrap"><Button variant="primary" disabled={busy} onClick={confirm}>{busy ? say('Checking…', 'Đang kiểm tra…') : stage === 'review-approval' ? say('Review exact approval', 'Xem phê duyệt chính xác') : say('Review CCTP burn', 'Xem lệnh đốt CCTP')}</Button><Button disabled={busy} onClick={cancelReview}>{say('Cancel', 'Hủy')}</Button></div>}
-    {hash && (['source-pending', 'source-unknown', 'source-confirmed', 'attestation-pending', 'attestation-available', 'forwarding-pending', 'forwarding-failed', 'destination-pending', 'destination-failed', 'status-unavailable'].includes(stage) || stage === 'destination-confirmed' && !completedActivity) && <Button disabled={busy} onClick={checkAgain}>{run.current?.step === 'approval' ? say('Check approval receipt', 'Kiểm tra biên nhận cấp quyền') : say('Check Arc receipt, Circle status and Base destination', 'Kiểm tra biên nhận Arc, trạng thái Circle và đích Base')}</Button>}
+    {hash && (['source-pending', 'source-unknown', 'source-confirmed', 'attestation-pending', 'attestation-available', 'forwarding-pending', 'forwarding-failed', 'destination-pending', 'destination-failed', 'status-unavailable'].includes(stage) || stage === 'destination-confirmed' && !completedActivity) && <Button disabled={busy} onClick={checkAgain}>{run.current?.step === 'approval' ? say('Check approval receipt', 'Kiểm tra biên nhận cấp quyền') : say(`Check Arc receipt, Circle status and ${dn} destination`, `Kiểm tra biên nhận Arc, trạng thái Circle và đích ${dn}`)}</Button>}
   </div>
 }

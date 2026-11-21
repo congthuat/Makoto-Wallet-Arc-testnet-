@@ -1,5 +1,6 @@
 import { getAddress, isAddress, zeroAddress, type Address } from "viem";
-import { arcTestnet, baseSepolia } from "viem/chains";
+import { arcTestnet } from "viem/chains";
+import { cctpDestinationByChainId } from "./cctp.ts";
 import { getAssetById, parseAssetAmount, type SupportedAssetId } from "./assets.ts";
 import { isXyloSwappableAssetId, oppositeAssetId, type XyloSwappableAssetId } from "./swap.ts";
 
@@ -7,7 +8,7 @@ import { isXyloSwappableAssetId, oppositeAssetId, type XyloSwappableAssetId } fr
 type IntentBase = Readonly<{ version: 1; id: string }>;
 export type SendPlannerIntent = IntentBase & Readonly<{ kind: "SEND"; chainId: typeof arcTestnet.id; asset: SupportedAssetId; amount: string; recipient: Address }>;
 export type SwapPlannerIntent = IntentBase & Readonly<{ kind: "SWAP"; chainId: typeof arcTestnet.id; fromAsset: XyloSwappableAssetId; toAsset: XyloSwappableAssetId; amount: string }>;
-export type BridgePlannerIntent = IntentBase & Readonly<{ kind: "BRIDGE"; sourceChainId: typeof arcTestnet.id; destinationChainId: typeof baseSepolia.id; asset: "usdc"; amount: string; recipient: Address }>;
+export type BridgePlannerIntent = IntentBase & Readonly<{ kind: "BRIDGE"; sourceChainId: typeof arcTestnet.id; destinationChainId: number; asset: "usdc"; amount: string; recipient: Address }>;
 export type PlannerIntent = SendPlannerIntent | SwapPlannerIntent | BridgePlannerIntent;
 
 export type PlannerIntentValidationCode = "INVALID_SCHEMA" | "UNSUPPORTED_VERSION" | "UNSUPPORTED_KIND" | "INVALID_INPUT" | "UNSUPPORTED";
@@ -60,7 +61,7 @@ export function validatePlannerIntent(input: unknown): PlannerIntentValidationRe
     if (!from || !to || !isXyloSwappableAssetId(from.id) || !isXyloSwappableAssetId(to.id) || to.id !== oppositeAssetId(from.id)) add("intent.toAsset", "UNSUPPORTED", "Unsupported Swap pair.");
   } else if (input.kind === "BRIDGE") {
     if (!keys(input, [...base, "sourceChainId", "destinationChainId", "asset", "amount", "recipient"])) add("intent", "INVALID_SCHEMA", "Bridge requires only its declared fields.");
-    if (input.sourceChainId !== arcTestnet.id || input.destinationChainId !== baseSepolia.id) add("intent.destinationChainId", "UNSUPPORTED", "Only Arc Testnet to Base Sepolia is supported.");
+    if (input.sourceChainId !== arcTestnet.id || typeof input.destinationChainId !== "number" || !cctpDestinationByChainId(input.destinationChainId)) add("intent.destinationChainId", "UNSUPPORTED", "Only Arc Testnet to a supported Circle CCTP destination is supported.");
     if (input.asset !== "usdc") add("intent.asset", "UNSUPPORTED", "Only USDC Bridge is supported.");
     if (!address(input.recipient)) add("intent.recipient", "INVALID_INPUT", "Recipient must be a non-zero EVM address.");
   } else add("intent.kind", "UNSUPPORTED_KIND", "Unsupported planner intent kind.");

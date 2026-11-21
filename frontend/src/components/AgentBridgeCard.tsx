@@ -2,11 +2,11 @@
  * AgentBridgeCard — Bridge execution embedded in the Agent chat.
  *
  * Mounts LiveCctpControl directly (no logic duplication).
- * Arc Testnet → Base Sepolia via Circle CCTP v2 only.
+ * Arc Testnet → a supported Circle CCTP v2 forwarding destination (USDC only).
  *
  * Safety invariants preserved from LiveCctpControl:
  * - Approval and Burn are two separate wallet confirmations.
- * - "Completed" only when destination evidence (Base receipt + USDC transfer) is available.
+ * - "Completed" only when destination evidence (destination receipt + USDC transfer) is available.
  * - Source confirmed ≠ Bridge completed.
  * - Checkpoint/recovery is maintained by LiveCctpControl's existing strategy controller.
  */
@@ -17,11 +17,13 @@ import { T } from './wallet/ui'
 import { useT } from '../lib/i18n'
 import { LiveCctpControl, type LiveQuote } from './LiveCctpControl'
 import type { CctpTransferSpeed } from '../migrated/toolLayer'
+import { DEFAULT_CCTP_DESTINATION, cctpDestinationByChainId } from '../migrated/cctp'
 
 export type AgentBridgeParams = {
   account: string
   amount: string
   transferSpeed: CctpTransferSpeed
+  destinationChainId?: number
 }
 
 export function AgentBridgeCard({ params, onDone, onCancel }: {
@@ -35,6 +37,7 @@ export function AgentBridgeCard({ params, onDone, onCancel }: {
   const vi = lang === 'vi'
   const say = useCallback((en: string, vn: string) => vi ? vn : en, [vi])
   const [liveQuote, setLiveQuote] = useState<LiveQuote | undefined>(undefined)
+  const destination = cctpDestinationByChainId(params.destinationChainId) ?? DEFAULT_CCTP_DESTINATION
 
   const onSourceConfirmed = useCallback(async () => {
     try { await refetchWallet() } catch { /* non-fatal */ }
@@ -45,7 +48,7 @@ export function AgentBridgeCard({ params, onDone, onCancel }: {
       {/* Header */}
       <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center justify-between gap-2">
         <span className={`text-[11px] font-bold tracking-[0.12em] ${T.mute}`}>
-          {say('BRIDGE IN CHAT', 'CHUYỂN CHUỖI TRONG CHAT')} · Arc → Base Sepolia
+          {say('BRIDGE IN CHAT', 'CHUYỂN CHUỖI TRONG CHAT')} · Arc → {destination.name}
         </span>
         <button onClick={onCancel} className={`${T.mute} hover:text-white p-0.5`} aria-label="Close">
           <X size={14} />
@@ -72,8 +75,8 @@ export function AgentBridgeCard({ params, onDone, onCancel }: {
         {/* Speed selector note */}
         <p className={`text-[11.5px] ${T.mute}`}>
           {say(
-            'Route: Arc Testnet → Base Sepolia · Circle CCTP v2',
-            'Tuyến: Arc Testnet → Base Sepolia · Circle CCTP v2',
+            `Route: Arc Testnet → ${destination.name} · Circle CCTP v2`,
+            `Tuyến: Arc Testnet → ${destination.name} · Circle CCTP v2`,
           )}
         </p>
 
@@ -82,6 +85,7 @@ export function AgentBridgeCard({ params, onDone, onCancel }: {
           account={params.account}
           amount={params.amount}
           transferSpeed={params.transferSpeed}
+          destinationChainId={destination.chainId}
           onSourceConfirmed={onSourceConfirmed}
           onComplete={() => onDone('completed')}
           onQuoteChange={setLiveQuote}
@@ -91,8 +95,8 @@ export function AgentBridgeCard({ params, onDone, onCancel }: {
       {/* Safety note */}
       <div className={`px-4 py-2 border-t border-white/[0.05] text-[11.5px] ${T.mute}`}>
         {say(
-          'Approval and burn are separate wallet confirmations. Completed only after Base destination evidence.',
-          'Phê duyệt và đốt là hai xác nhận ví riêng. Chỉ hoàn tất khi có bằng chứng đích trên Base.',
+          `Approval and burn are separate wallet confirmations. Completed only after ${destination.short} destination evidence.`,
+          `Phê duyệt và đốt là hai xác nhận ví riêng. Chỉ hoàn tất khi có bằng chứng đích trên ${destination.short}.`,
         )}
       </div>
     </div>

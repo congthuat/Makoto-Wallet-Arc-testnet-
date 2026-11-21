@@ -7,6 +7,7 @@
 import { parseBrainRequest } from '../brain/parser.ts'
 import type { BrainLocale } from '../brain/types.ts'
 import { resolveContact, type ContactLike } from './agentMemory.ts'
+import { cctpDestinationByName, cctpDestinationFromText } from '../migrated/cctp.ts'
 
 export type PlanStep = Readonly<{
   kind: 'send' | 'swap' | 'bridge'
@@ -15,6 +16,8 @@ export type PlanStep = Readonly<{
   recipient?: string
   recipientContact?: string
   outputAsset?: 'USDC' | 'EURC'
+  /** Bridge only: Circle CCTP destination chain name (Arc Testnet is always the source). */
+  destination?: string
 }>
 export type PlanStepStatus = 'waiting' | 'ready' | 'active' | 'done' | 'failed'
 
@@ -38,7 +41,11 @@ export function parsePlanStep(value: unknown): PlanStep | undefined {
     if (asset === 'cirBTC' || (v.outputAsset !== 'USDC' && v.outputAsset !== 'EURC') || v.outputAsset === asset) return undefined
     return { kind: 'swap', asset, amount: v.amount, outputAsset: v.outputAsset }
   }
-  if (v.kind === 'bridge' && asset === 'USDC') return { kind: 'bridge', asset, amount: v.amount }
+  if (v.kind === 'bridge' && asset === 'USDC') {
+    if (v.destination === undefined || v.destination === null || v.destination === '') return { kind: 'bridge', asset, amount: v.amount }
+    const destination = typeof v.destination === 'string' ? cctpDestinationByName(v.destination) ?? cctpDestinationFromText(v.destination) : undefined
+    return destination ? { kind: 'bridge', asset, amount: v.amount, destination: destination.name } : undefined
+  }
   return undefined
 }
 
@@ -55,7 +62,7 @@ export function planStepsFromText(text: string, locale: BrainLocale): PlanStep[]
   const steps = parts.map((part) => {
     const prep = parseBrainRequest(part, locale).preparation
     if (!prep || prep.maxRequested) return undefined
-    return parsePlanStep({ kind: prep.kind, asset: prep.asset ?? (prep.kind === 'bridge' ? 'USDC' : undefined), amount: prep.amount, recipient: prep.recipient, outputAsset: prep.outputAsset })
+    return parsePlanStep({ kind: prep.kind, asset: prep.asset ?? (prep.kind === 'bridge' ? 'USDC' : undefined), amount: prep.amount, recipient: prep.recipient, outputAsset: prep.outputAsset, destination: prep.destinationChain })
   })
   return steps.every(Boolean) ? steps as PlanStep[] : undefined
 }
@@ -63,7 +70,7 @@ export function planStepsFromText(text: string, locale: BrainLocale): PlanStep[]
 /** Canonical English command for planBrainRequest; contacts are resolved locally. */
 export function stepCommand(step: PlanStep, contacts: readonly ContactLike[]): { ok: true; command: string; contactName?: string } | { ok: false; reason: 'contact-not-found' | 'contact-ambiguous'; name: string } {
   if (step.kind === 'swap') return { ok: true, command: `swap ${step.amount} ${step.asset} to ${step.outputAsset}` }
-  if (step.kind === 'bridge') return { ok: true, command: `bridge ${step.amount} USDC from Arc Testnet to Base Sepolia` }
+  if (step.kind === 'bridge') return { ok: true, command: `bridge ${step.amount} USDC from Arc Testnet to ${step.destination ?? 'Base Sepolia'}` }
   if (step.recipient) return { ok: true, command: `send ${step.amount} ${step.asset} to ${step.recipient}` }
   const name = step.recipientContact ?? ''
   const resolved = resolveContact(name, contacts)
@@ -84,7 +91,7 @@ export function planStatuses(done: readonly boolean[], activeIndex: number | und
 
 export function describeStep(step: PlanStep, vi: boolean): string {
   if (step.kind === 'swap') return vi ? `Đổi ${step.amount} ${step.asset} sang ${step.outputAsset}` : `Swap ${step.amount} ${step.asset} to ${step.outputAsset}`
-  if (step.kind === 'bridge') return vi ? `Bridge ${step.amount} USDC sang Base Sepolia` : `Bridge ${step.amount} USDC to Base Sepolia`
+  if (step.kind === 'bridge') return vi ? `Bridge ${step.amount} USDC sang ${step.destination ?? 'Base Sepolia'}` : `Bridge ${step.amount} USDC to ${step.destination ?? 'Base Sepolia'}`
   const who = step.recipientContact ?? (step.recipient ? `${step.recipient.slice(0, 6)}…${step.recipient.slice(-4)}` : '?')
   return vi ? `Gửi ${step.amount} ${step.asset} cho ${who}` : `Send ${step.amount} ${step.asset} to ${who}`
 }
