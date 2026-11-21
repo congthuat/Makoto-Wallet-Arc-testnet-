@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { BookUser, ExternalLink, Lock, LogOut, Network,  Wallet, Bell, Eye, KeyRound, Globe, Palette, Filter, Activity, BookOpen, MessageSquare, Sparkles, Gauge } from 'lucide-react'
+import { BookUser, ExternalLink, Lock, LogOut, Network,  Wallet, Bell, Eye, KeyRound, Globe, Palette, Filter, Activity, BookOpen, MessageSquare, Sparkles, Gauge, Snowflake } from 'lucide-react'
 import { useWallet } from '../lib/store'
 import { LANGS, setLang, useT, type Lang } from '../lib/i18n'
 import { useTheme } from '../lib/theme'
+import { festiveActive } from '../lib/festive'
 import { ARC, ensureArcNetwork, getProvider } from '../lib/wallet'
 import { Avatar, Badge, Button, Card, LiveDot, PageHeader, Segmented, T, Toggle } from '../components/wallet/ui'
 import { ConnectModal, copyText } from '../components/wallet/shared'
@@ -77,6 +78,8 @@ export default function SettingsPage() {
           <Row icon={Palette} title="Appearance" right={<Segmented size="sm" value={theme === 'light' ? tr('Light') : tr('Dark')} options={[tr('Dark'), tr('Light')] as const} onChange={(v) => setTheme(v === tr('Light') ? 'light' : 'dark')} />} />
           <Row icon={Palette} title="Theme" desc={settings.vivid !== false ? 'Neon — lime glow and purple accents' : 'Calm — minimal colour, no glow'}
             right={<Segmented size="sm" value={tr(settings.vivid !== false ? 'Vivid' : 'Calm')} options={[tr('Calm'), tr('Vivid')] as const} onChange={(v) => set({ vivid: v === tr('Vivid') })} />} />
+          <Row icon={Snowflake} title="Christmas look" desc={festiveActive(settings.festive) ? 'Snow, twinkling lights and a Santa hat for Makoto' : 'Turned off'}
+            right={<Segmented size="sm" value={tr(settings.festive === 'on' ? 'On' : settings.festive === 'off' ? 'Off' : 'Auto')} options={[tr('Auto'), tr('On'), tr('Off')] as const} onChange={(v) => set({ festive: v === tr('On') ? 'on' : v === tr('Off') ? 'off' : 'auto' })} />} />
           <Row icon={Eye} title="Hide balances" desc="Mask amounts across the app" right={<Toggle label={tr('Hide balances')} on={hidden} onChange={() => setHidden(!hidden)} />} />
           <Row icon={Eye} title="Hide balances under $1" right={<Toggle label={tr('Hide balances under $1')} on={settings.hideSmall} onChange={() => set({ hideSmall: !settings.hideSmall })} />} />
           <Row icon={Filter} title="Hide unverified tokens" desc="Filter unknown airdropped tokens" right={<Toggle label={tr('Hide unverified tokens')} on={settings.hideSpam} onChange={() => set({ hideSpam: !settings.hideSpam })} />} />

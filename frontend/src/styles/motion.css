@@ -185,3 +185,33 @@ html[data-theme=light] .mk-av-cell.is-on { background: rgba(140,190,0,.14); bord
 .mk-contact:hover .mk-contact-edit, .mk-contact .mk-contact-av-btn:focus-visible .mk-contact-edit { opacity: 1; transform: none }
 @media (hover: none) { .mk-contact .mk-contact-edit { opacity: 1; transform: none } }
 @media (prefers-reduced-motion: reduce) { .mk-av-cell { animation: none } .mk-contact, .mk-contact:hover, .mk-contact:hover .mk-contact-av { transform: none } }
+
+/* Festive (Christmas) layer */
+@keyframes mk-snow { 0% { transform: translate3d(0, -10vh, 0) } 100% { transform: translate3d(var(--drift, 0px), 110vh, 0) } }
+.mk-flake { position: absolute; top: 0; border-radius: 9999px; background: #fff; box-shadow: 0 0 6px rgba(255,255,255,.7); animation: mk-snow linear infinite; will-change: transform }
+html[data-theme=light] .mk-flake { background: #b9d3ea; box-shadow: none }
+.mk-lights { position: absolute; inset: 0 0 auto 0; height: 22px }
+.mk-lights > i { position: absolute; top: 3px; width: 6px; height: 9px; border-radius: 50% 50% 45% 45%; transform: translateX(-50%); box-shadow: 0 0 8px 1px currentColor; animation: mk-twinkle 1.8s ease-in-out infinite }
+.mk-lights > i:nth-of-type(odd) { top: 7px }
+@keyframes mk-twinkle { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+.mk-santa-hat { display: none; position: absolute; pointer-events: none; z-index: 2; transform: rotate(-14deg); filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)) }
+html[data-festive=on] .mk-santa-hat { display: block; animation: mk-hat-in .6s var(--mk-ease-spring) both }
+@keyframes mk-hat-in { from { opacity: 0; transform: translateY(-8px) rotate(-30deg) } to { opacity: 1; transform: rotate(-14deg) } }
+html[data-festive=on] .mk-primary { box-shadow: 0 0 0 1px rgba(239,68,68,.35), 0 6px 22px -8px rgba(239,68,68,.55) }
+@media (prefers-reduced-motion: reduce) { .mk-flake { display: none } .mk-lights > i { animation: none } }
+@media (max-width: 640px) { .mk-flake:nth-child(3n) { display: none } }
+
+/* Festive gift box */
+.mk-giftbox-glow { opacity: .55; animation: mk-breathe 3s ease-in-out infinite }
+.mk-giftbox.is-idle { animation: mk-gift-wobble 2.6s ease-in-out infinite; transform-origin: 50% 100% }
+.mk-giftbox.is-shaking { animation: mk-gift-shake .32s ease-in-out infinite; transform-origin: 50% 100% }
+.mk-giftbox.is-open .mk-giftbox-lid { animation: mk-gift-lid .9s cubic-bezier(.2,.8,.2,1) forwards }
+.mk-giftbox.is-open .mk-giftbox-glow { opacity: 1; animation: mk-gift-glow .9s ease-out both }
+.mk-gift-confetti { border-radius: 2px; opacity: 0; animation: mk-gift-burst 1.3s cubic-bezier(.15,.7,.3,1) forwards }
+@keyframes mk-gift-wobble { 0%, 70%, 100% { transform: rotate(0) } 76% { transform: rotate(-5deg) } 82% { transform: rotate(5deg) } 88% { transform: rotate(-3deg) } 94% { transform: rotate(2deg) } }
+@keyframes mk-gift-shake { 0%, 100% { transform: rotate(0) translateY(0) } 25% { transform: rotate(-7deg) translateY(-2px) } 75% { transform: rotate(7deg) translateY(-2px) } }
+@keyframes mk-gift-lid { 0% { transform: translateY(0) rotate(0) } 40% { transform: translateY(-46px) rotate(-18deg) } 100% { transform: translateY(-30px) translateX(-36px) rotate(-38deg); opacity: .95 } }
+@keyframes mk-gift-glow { from { transform: scale(.6) } to { transform: scale(1.5) } }
+@keyframes mk-gift-burst { 0% { opacity: 1; transform: translate(-50%, -50%) rotate(0) } 100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y) + 60px)) rotate(var(--r)) } }
+.mk-gift-snow > span { position: absolute; top: -6px; border-radius: 9999px; background: #fff; animation: mk-snow linear infinite }
+@media (prefers-reduced-motion: reduce) { .mk-giftbox, .mk-giftbox-lid, .mk-gift-confetti, .mk-gift-snow > span { animation: none !important } }

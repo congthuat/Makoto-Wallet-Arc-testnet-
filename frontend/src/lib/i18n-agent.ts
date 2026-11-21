@@ -117,6 +117,17 @@ export const AGENT_I18N: Record<string, [string, string, string, string]> = {
   // Payment requests — 2026-10-26
   "Payment requests": ["Yêu cầu thanh toán", '', '', ''],
   "Gift links": ["Lì xì", '红包链接', 'ギフトリンク', '선물 링크'],
+  // Christmas + Wrapped — 2026-11-21
+  "Christmas look": ["Giao diện Giáng sinh", "圣诞外观", "クリスマス仕様", "크리스마스 테마"],
+  "Snow, twinkling lights and a Santa hat for Makoto": ["Tuyết rơi, đèn nhấp nháy và mũ Noel cho Makoto", "飘雪、闪烁彩灯，还有 Makoto 的圣诞帽", "雪、きらめくライト、そしてMakotoのサンタ帽", "눈, 반짝이는 조명, 그리고 Makoto의 산타 모자"],
+  "Turned off": ["Đã tắt", "已关闭", "オフ", "꺼짐"],
+  "Auto": ["Tự động", "自动", "自動", "자동"],
+  "On": ["Bật", "开", "オン", "켜기"],
+  "Off": ["Tắt", "关", "オフ", "끄기"],
+  "Your 2026": ["Năm 2026 của bạn", "你的 2026", "あなたの2026", "나의 2026"],
+  "Merry Christmas from Makoto": ["Makoto chúc bạn Giáng sinh vui vẻ", "Makoto 祝你圣诞快乐", "Makotoからメリークリスマス", "Makoto가 전하는 메리 크리스마스"],
+  "Send a Christmas gift box to a friend, or look back at your year.": ["Gửi hộp quà Giáng sinh cho bạn bè, hoặc nhìn lại một năm của bạn.", "给朋友送一个圣诞礼盒，或回顾你的这一年。", "友だちにクリスマスギフトを贈ったり、一年を振り返ったり。", "친구에게 크리스마스 선물 상자를 보내거나 한 해를 돌아보세요."],
+  "Send a gift": ["Gửi quà", "送礼物", "ギフトを贈る", "선물 보내기"],
   // Contacts page — 2026-11-10
   "Payment tools": ["Tiện ích thanh toán", "支付工具", "支払いツール", "결제 도구"],
   "Swap & Bridge": ["Đổi & Chuyển chuỗi", "兑换与跨链", "スワップ＆ブリッジ", "스왑 & 브리지"],

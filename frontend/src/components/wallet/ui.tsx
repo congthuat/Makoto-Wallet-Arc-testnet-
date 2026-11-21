@@ -88,11 +88,24 @@ export function Avatar({ size = 24, seed = 'makoto', emoji, tone, photo }: { siz
   )
 }
 
+/** Small Santa hat drawn in SVG — used on the Makoto mascot. */
+export function SantaHat({ className = '', style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 64 52" className={className} style={style} aria-hidden>
+      <path d="M8 40 C 14 18, 30 6, 46 8 C 54 9, 58 16, 56 24 C 52 18, 46 17, 42 20 C 48 26, 50 34, 52 40 Z" fill="#dc2626" />
+      <path d="M8 40 C 14 18, 30 6, 46 8 C 40 12, 30 22, 26 40 Z" fill="#ef4444" opacity=".7" />
+      <rect x="4" y="37" width="52" height="11" rx="5.5" fill="#f8fafc" />
+      <circle cx="57" cy="26" r="6" fill="#f8fafc" />
+    </svg>
+  )
+}
+
 /** Makoto Agent mascot — glossy purple helmet, dark visor, glowing lime eyes (brand colours). */
 export function Orb({ size = 56, glow = true, thinking = false, float = false }: { size?: number; glow?: boolean; /** Bobs and pulses while Makoto is answering. */ thinking?: boolean; /** Gentle idle float. */ float?: boolean }) {
   const id = useId().replace(/:/g, '')
   return (
     <div className={`relative shrink-0 ${thinking ? 'mk-orb-think' : float ? 'mk-float' : ''}`} style={{ width: size, height: size * 0.84 }}>
+      <SantaHat className="mk-santa-hat" style={{ width: size * 0.6, left: size * 0.02, top: -size * 0.28 }} />
       {glow && <div className="absolute -inset-[18%] rounded-full bg-[#D4FF3A]/15 blur-xl mk-breathe" aria-hidden />}
       <svg viewBox="0 0 120 100" width={size} height={size * 0.84} className="relative" role="img" aria-label="Makoto Agent">
         <defs>

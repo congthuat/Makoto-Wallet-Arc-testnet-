@@ -19,6 +19,7 @@ import { History } from 'lucide-react'
 import ShareButton from '../components/ShareCard'
 import { WelcomeHero } from '../components/wallet/WelcomeHero'
 import { AnimatedUsd } from '../components/wallet/AnimatedNumber'
+import { useFestive } from '../lib/festive'
 
 const TABS = ['Ask', 'Monitor', 'Automate'] as const
 type Tab = (typeof TABS)[number]
@@ -266,6 +267,28 @@ function AttentionStrip() {
   )
 }
 
+function FestiveBanner() {
+  const { go } = useWallet()
+  const [tr] = useT()
+  const festive = useFestive()
+  if (!festive) return null
+  return (
+    <section className="mk-in relative overflow-hidden rounded-[22px] border border-rose-300/25 p-4 sm:p-5" style={{ background: 'radial-gradient(90% 120% at 0% 0%, rgba(239,68,68,.28), transparent 60%), radial-gradient(90% 120% at 100% 100%, rgba(34,197,94,.25), transparent 60%), #15121a' }}>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
+        <div className="text-[40px] leading-none mk-float" aria-hidden>🎄</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[16px] font-bold text-white">{tr('Merry Christmas from Makoto')}</div>
+          <div className="text-[13px] text-white/70 mt-0.5">{tr('Send a Christmas gift box to a friend, or look back at your year.')}</div>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={() => go('gifts')} className="mk-primary h-9 px-3.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white text-[13px] font-semibold inline-flex items-center gap-1.5">🎁 {tr('Send a gift')}</button>
+          <button onClick={() => go('wrapped')} className="h-9 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-[13px] font-semibold inline-flex items-center gap-1.5">✨ {tr('Your 2026')}</button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export default function Home() {
   const { activity, go, mode } = useWallet()
   const [tr] = useT()
@@ -273,6 +296,7 @@ export default function Home() {
     <div className="space-y-5">
       {mode === 'demo' && <WelcomeHero />}
       <BalanceHero />
+      <FestiveBanner />
       <AgentCommand />
       <AttentionStrip />
       <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-5">

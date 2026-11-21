@@ -9,6 +9,9 @@ import { ConnectModal } from '../components/wallet/shared'
 import { ARC, getProvider, short } from '../lib/wallet'
 import { Badge, Button, Card, Field, PageHeader, T, inputCls } from '../components/wallet/ui'
 import { TxPanel, useReviewedWrite } from './PayRequests'
+import { GIFT_THEMES, readGiftMemo, themeById, writeGiftMemo, type GiftThemeId } from '../lib/giftThemes'
+import { GiftBox } from '../components/festive/GiftBox'
+import { useFestive } from '../lib/festive'
 import { approveData, formatUnitsText, prepareTx, readAllowanceUnits, readTokenUnits, waitForReceipt, PAY_TOKENS, type PayToken } from '../lib/payRequests'
 import {
   CREATE2_PROXY, GIFTS_ADDRESS, MAX_SHARES, claimData, claimSignature, claimedAmount, createGiftData, createdGiftId, giftFromHash, giftLink, giftsDeployData, giftsDeployed,
@@ -58,8 +61,10 @@ function ActivateCard({ vi, onActivated }: { vi: boolean; onActivated: () => voi
 function ShareLink({ id, keyHex, vi }: { id: bigint; keyHex: Hex; vi: boolean }) {
   const w = useWallet()
   const link = giftLink(id, keyHex)
+  const festive = useFestive()
   const share = async () => {
-    if (navigator.share) { try { await navigator.share({ title: 'Makoto lì xì', text: L(vi, 'A gift for you on Makoto Wallet 🧧', 'Lì xì cho bạn trên Makoto Wallet 🧧'), url: link }); return } catch { /* cancelled */ } }
+    const text = festive ? L(vi, 'A Christmas gift for you on Makoto Wallet 🎁', 'Quà Giáng sinh cho bạn trên Makoto Wallet 🎁') : L(vi, 'A gift for you on Makoto Wallet 🧧', 'Lì xì cho bạn trên Makoto Wallet 🧧')
+    if (navigator.share) { try { await navigator.share({ title: 'Makoto', text, url: link }); return } catch { /* cancelled */ } }
     await navigator.clipboard?.writeText(link); w.notify(L(vi, 'Link copied', 'Đã sao chép link'))
   }
   return (
@@ -89,6 +94,8 @@ function CreateCard({ vi, onCreated }: { vi: boolean; onCreated: (id: bigint, ke
   const [lucky, setLucky] = useState(true)
   const [expiry, setExpiry] = useState('7')
   const [memo, setMemo] = useState('')
+  const festive = useFestive()
+  const [design, setDesign] = useState<GiftThemeId>(festive ? 'xmas' : 'lucky')
   const [error, setError] = useState('')
   const pending = useRef<{ key: Hex; signer: Address; shares: bigint[]; signature: string } | null>(null)
   const start = async () => {
@@ -99,7 +106,7 @@ function CreateCard({ vi, onCreated }: { vi: boolean; onCreated: (id: bigint, ke
     const n = Number(count)
     if (!Number.isInteger(n) || n < 1 || n > MAX_SHARES) { setError(L(vi, `Number of people must be 1–${MAX_SHARES}.`, `Số người nhận phải từ 1 đến ${MAX_SHARES}.`)); return }
     if (amount < BigInt(n)) { setError(L(vi, 'The total is too small for that many people.', 'Tổng tiền quá nhỏ cho số người này.')); return }
-    const note = memo.trim()
+    const note = writeGiftMemo(design, memo)
     if (new TextEncoder().encode(note).length > 140) { setError(L(vi, 'Message is too long (max 140 bytes).', 'Lời chúc quá dài (tối đa 140 byte).')); return }
     const p = getProvider()
     if (!p || w.mode !== 'connected') { setError(L(vi, 'Connect your wallet first.', 'Hãy kết nối ví trước.')); return }
@@ -145,6 +152,23 @@ function CreateCard({ vi, onCreated }: { vi: boolean; onCreated: (id: bigint, ke
     <Card className="p-5">
       <div className="flex items-center gap-2 font-semibold"><GiftIcon size={16} className="text-rose-300" /> {L(vi, 'New gift link', 'Tạo lì xì mới')}</div>
       <p className={`mt-1 text-[12.5px] ${T.sub}`}>{L(vi, 'Friends open the link and receive their share — they do not need any USDC for fees.', 'Bạn bè mở link là nhận quà — không cần có sẵn USDC để trả phí.')}</p>
+      <div className="mt-4">
+        <div className={`mb-2 text-[13px] font-medium ${T.sub}`}>{L(vi, 'Card design', 'Mẫu thiệp')}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup">
+          {GIFT_THEMES.map((t) => {
+            const on = design === t.id
+            return (
+              <button key={t.id} type="button" role="radio" aria-checked={on} onClick={() => { setDesign(t.id); if (!memo.trim() || GIFT_THEMES.some((x) => x.greetings.some((g) => g.en === memo || g.vi === memo))) setMemo(vi ? t.greetings[0].vi : t.greetings[0].en) }}
+                className={`group relative h-[84px] rounded-2xl overflow-hidden border text-left p-2.5 transition duration-300 ${on ? 'scale-[1.03] border-transparent' : 'border-white/[0.08] opacity-80 hover:opacity-100 hover:-translate-y-0.5'}`}
+                style={{ background: t.bg, boxShadow: on ? `0 0 0 2px ${t.border}, 0 10px 26px -10px ${t.glow}` : undefined }}>
+                <span className={`absolute right-2 top-1.5 text-[30px] leading-none transition-transform duration-500 ${on ? 'scale-110 -rotate-6' : 'group-hover:scale-110'}`}>{t.emoji}</span>
+                <span className="absolute left-2.5 bottom-2 text-[12px] font-semibold text-white drop-shadow">{vi ? t.nameVi : t.name}</span>
+                {on && <span className="absolute left-2 top-2 w-4 h-4 rounded-full bg-white text-[#0b0b10] flex items-center justify-center mk-pop"><CheckCircle2 size={12} /></span>}
+              </button>
+            )
+          })}
+        </div>
+      </div>
       <div className="mt-3 grid sm:grid-cols-2 gap-3">
         <Field label={L(vi, 'Token', 'Token')}>
           <div className="flex gap-2">{(['USDC', 'EURC'] as PayToken[]).map((item) => <button key={item} type="button" aria-pressed={token === item} onClick={() => setToken(item)} className={`h-10 flex-1 rounded-xl border text-[13px] font-semibold ${token === item ? 'border-neon-400 bg-neon-500/10 text-neon-200' : 'border-white/[0.08]'}`}>{item}</button>)}</div>
@@ -157,7 +181,12 @@ function CreateCard({ vi, onCreated }: { vi: boolean; onCreated: (id: bigint, ke
             <button type="button" aria-pressed={!lucky} onClick={() => setLucky(false)} className={`h-10 flex-1 rounded-xl border text-[13px] font-semibold ${!lucky ? 'border-neon-400 bg-neon-500/10 text-neon-200' : 'border-white/[0.08]'}`}>{L(vi, 'Equal', 'Chia đều')}</button>
           </div>
         </Field>
-        <Field label={L(vi, 'Message', 'Lời chúc')}><input aria-label={L(vi, 'Message', 'Lời chúc')} value={memo} onChange={(e) => setMemo(e.target.value)} maxLength={140} placeholder={L(vi, 'Happy new year!', 'Chúc mừng năm mới!')} className={`${inputCls} h-10`} /></Field>
+        <Field label={L(vi, 'Message', 'Lời chúc')}>
+          <input aria-label={L(vi, 'Message', 'Lời chúc')} value={memo} onChange={(e) => setMemo(e.target.value)} maxLength={130} placeholder={vi ? themeById(design).greetings[0].vi : themeById(design).greetings[0].en} className={`${inputCls} h-10`} />
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {themeById(design).greetings.map((g) => { const text = vi ? g.vi : g.en; return <button key={g.en} type="button" onClick={() => setMemo(text)} className={`px-2 py-1 rounded-full text-[11.5px] border transition ${memo === text ? 'border-neon-400/50 bg-neon-500/10 text-neon-200' : `border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] ${T.sub}`}`}>{text}</button> })}
+          </div>
+        </Field>
         <Field label={L(vi, 'Expires', 'Hết hạn')}>
           <select aria-label={L(vi, 'Expires', 'Hết hạn')} value={expiry} onChange={(e) => setExpiry(e.target.value)} className={`${inputCls} h-10`}>
             <option value="1" className="bg-[#18181e]">{L(vi, 'In 1 day', 'Sau 1 ngày')}</option>
@@ -186,6 +215,7 @@ function MyGiftCard({ id, keyHex, vi, showLink = false }: { id: bigint; keyHex: 
   if (gift === undefined) return <Card className="p-4"><p className={`text-[13px] ${T.mute}`}><Loader2 size={14} className="inline animate-spin" /> {L(vi, 'Loading gift…', 'Đang tải lì xì…')}</p></Card>
   if (gift === null) return null
   const remaining = gift.total - gift.claimedAmount
+  const card = readGiftMemo(gift.memo)
   const canRefund = !gift.refunded && remaining > 0n && w.mode === 'connected' && w.address?.toLowerCase() === gift.creator.toLowerCase()
   const startRefund = async () => {
     setError('')
@@ -200,9 +230,9 @@ function MyGiftCard({ id, keyHex, vi, showLink = false }: { id: bigint; keyHex: 
     <Card className="p-4">
       <div data-my-gift={id.toString()} className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className={`text-[12px] ${T.mute}`}>🧧 {L(vi, 'Gift', 'Lì xì')} #{id.toString()}</div>
+          <div className={`text-[12px] ${T.mute}`}>{card.theme.emoji} {L(vi, 'Gift', 'Lì xì')} #{id.toString()}</div>
           <div className="mt-0.5 text-[18px] font-bold tabular-nums">{amountOf(gift.total, gift.token)}</div>
-          {gift.memo && <p className="mt-0.5 text-[13px] break-words">“{gift.memo}”</p>}
+          {card.text && <p className="mt-0.5 text-[13px] break-words">“{card.text}”</p>}
         </div>
         {statusBadge(gift, vi)}
       </div>
@@ -255,10 +285,20 @@ function ClaimCard({ id, keyHex, vi, relayer }: { id: bigint; keyHex: Hex; vi: b
   const me = w.mode === 'connected' && w.address ? w.address as Address : null
   const keyValid = useMemo(() => { try { return gift ? linkSigner(keyHex) === gift.claimSigner : false } catch { return false } }, [gift, keyHex])
 
-  const envelope = (body: React.ReactNode) => (
-    <div data-gift-claim={id.toString()} className="relative overflow-hidden rounded-3xl border border-amber-300/40 p-6 text-center shadow-[0_20px_60px_-20px_rgba(220,38,38,0.6)]" style={{ background: 'radial-gradient(120% 90% at 50% 0%, #e11d48 0%, #b91c1c 45%, #7f1d1d 100%)' }}>
-      <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 h-48 w-[140%] -translate-x-1/2 rounded-[50%] border-b-2 border-amber-300/50 bg-red-700/40" />
-      <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-full border-2 border-amber-200 bg-gradient-to-b from-amber-200 to-amber-500 text-red-800 shadow-lg"><GiftIcon size={28} /></div>
+  const card = readGiftMemo(gift?.memo)
+  const festiveCard = card.theme.id !== 'lucky'
+  const envelope = (body: React.ReactNode, box: 'idle' | 'shaking' | 'open' = 'idle') => (
+    <div data-gift-claim={id.toString()} data-gift-theme={card.theme.id} className="mk-in relative overflow-hidden rounded-3xl border p-6 text-center" style={{ background: card.theme.bg, borderColor: card.theme.border, boxShadow: `0 20px 60px -20px ${card.theme.glow}` }}>
+      {festiveCard ? (
+        <div aria-hidden className="mk-gift-snow pointer-events-none absolute inset-0">
+          {Array.from({ length: 18 }, (_, i) => <span key={i} style={{ left: `${(i * 53) % 100}%`, width: 2 + (i % 3), height: 2 + (i % 3), opacity: 0.4 + (i % 4) / 10, animationDuration: `${7 + (i % 5) * 2}s`, animationDelay: `${-(i * 0.9)}s` }} />)}
+        </div>
+      ) : (
+        <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 h-48 w-[140%] -translate-x-1/2 rounded-[50%] border-b-2 border-amber-300/50 bg-red-700/40" />
+      )}
+      {festiveCard
+        ? <div className="relative pt-3"><GiftBox theme={card.theme} state={box} /></div>
+        : <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-full border-2 border-amber-200 bg-gradient-to-b from-amber-200 to-amber-500 text-red-800 shadow-lg"><GiftIcon size={28} /></div>}
       <div className="relative mt-4 text-amber-50">{body}</div>
     </div>
   )
@@ -270,8 +310,8 @@ function ClaimCard({ id, keyHex, vi, relayer }: { id: bigint; keyHex: Hex; vi: b
   const claimedIndex = me ? gift.claimers.findIndex((a) => a.toLowerCase() === me.toLowerCase()) : -1
   const header = (
     <>
-      <div className="text-[12px] uppercase tracking-[0.14em] text-amber-200/90">{L(vi, 'A gift from', 'Lì xì từ')} {short(gift.creator)}</div>
-      {gift.memo && <p className="mt-2 text-[20px] font-bold leading-snug break-words text-amber-50">“{gift.memo}”</p>}
+      <div className="text-[12px] uppercase tracking-[0.14em] text-amber-200/90">{festiveCard ? L(vi, 'A Christmas gift from', 'Quà Giáng sinh từ') : L(vi, 'A gift from', 'Lì xì từ')} {short(gift.creator)}</div>
+      {card.text && <p className="mt-2 text-[20px] font-bold leading-snug break-words text-amber-50">“{card.text}”</p>}
     </>
   )
 
@@ -303,9 +343,9 @@ function ClaimCard({ id, keyHex, vi, relayer }: { id: bigint; keyHex: Hex; vi: b
   let body: React.ReactNode
   if (state.kind === 'done') {
     body = <>
-      <div className="py-1"><SuccessBurst size={56} /></div>
+      {!festiveCard && <div className="py-1"><SuccessBurst size={56} /></div>}
       <p className="text-[13px] text-amber-100">{L(vi, 'You received', 'Bạn đã nhận được')}</p>
-      <p data-gift-received className="text-[34px] font-extrabold tabular-nums text-amber-200">{amountOf(state.amount, gift.token)}</p>
+      <p data-gift-received className="mk-pop text-[34px] font-extrabold tabular-nums text-amber-200" style={{ animationDelay: festiveCard ? '.35s' : undefined }}>{amountOf(state.amount, gift.token)}</p>
       {/^0x[0-9a-fA-F]{64}$/.test(state.hash) && <a className="mt-1 inline-flex items-center gap-1 text-[12px] text-amber-100 underline" href={`${ARC.explorer}/tx/${state.hash}`} target="_blank" rel="noreferrer">{L(vi, 'View on ArcScan', 'Xem trên ArcScan')} <ExternalLink size={11} /></a>}
     </>
   } else if (claimedIndex >= 0) {
@@ -337,7 +377,7 @@ function ClaimCard({ id, keyHex, vi, relayer }: { id: bigint; keyHex: Hex; vi: b
   }
   return (
     <>
-      {envelope(<>{header}<div className="mt-5">{body}</div></>)}
+      {envelope(<>{header}<div className="mt-5">{body}</div></>, state.kind === 'done' || claimedIndex >= 0 ? 'open' : state.kind === 'sending' || state.kind === 'pending' || write.phase.kind === 'pending' ? 'shaking' : 'idle')}
       <TxPanel vi={vi} phase={write.phase} onCancel={() => write.setPhase({ kind: 'idle' })} onConfirm={() => write.phase.kind === 'review' && void write.confirm(write.phase.step, L(vi, 'Gift received.', 'Đã nhận lì xì.'))} />
       <ConnectModal open={connectOpen} onClose={() => setConnectOpen(false)} />
     </>
