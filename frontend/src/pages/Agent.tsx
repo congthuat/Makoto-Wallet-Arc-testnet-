@@ -3,6 +3,8 @@ import { ArrowUp, ArrowUpRight, ArrowLeftRight, Rainbow, PieChart, Radar, Check,
 import { RecipientSafety } from './Send'
 import { AgentSendCard, type AgentSendStage } from '../components/AgentSendCard'
 import { AgentSwapCard } from '../components/AgentSwapCard'
+import { venueFromText } from '../components/VenuePicker'
+import { VENUE_LABEL, type SwapVenueChoice } from '../migrated/uniswap.ts'
 import { AgentBridgeCard } from '../components/AgentBridgeCard'
 import type { CctpTransferSpeed } from '../migrated/toolLayer'
 import { useWallet } from '../lib/store'
@@ -58,7 +60,7 @@ export function agentSendProgressStage(state: AgentSendStage, previous: number):
 }
 
 type Intent = 'send' | 'swap' | 'bridge'
-type Params = { asset: string; amount: string; recipient: string; toAsset: string; dest: string }
+type Params = { asset: string; amount: string; recipient: string; toAsset: string; dest: string; venue?: SwapVenueChoice }
 /** execCard: 'pending' = params confirmed, user has not yet clicked Execute in Chat
  *            'active'  = execution component is mounted and running
  *            undefined = not in native execution mode (handoff path)   */
@@ -324,7 +326,7 @@ function PreSignSummary({ flow }: { flow: Flow }) {
   const text = flow.intent === 'send'
     ? (vi ? `Bạn sắp gửi ${p.amount} ${p.asset} cho ${who} trên Arc Testnet.${fee} Giao dịch blockchain không thể hoàn tác.` : `You are about to send ${p.amount} ${p.asset} to ${who} on Arc Testnet.${fee} Blockchain transfers cannot be reversed.`)
     : flow.intent === 'swap'
-      ? (vi ? `Bạn sắp đổi ${p.amount} ${p.asset} sang ${p.toAsset} trên Arc. Số nhận cuối cùng theo báo giá trực tiếp và mức trượt giá bạn chọn.` : `You are about to swap ${p.amount} ${p.asset} to ${p.toAsset} on Arc. The final amount follows the live quote and your slippage.`)
+      ? (vi ? `Bạn sắp đổi ${p.amount} ${p.asset} sang ${p.toAsset} trên Arc ${p.venue && p.venue !== 'best' ? `qua ${VENUE_LABEL[p.venue]}` : '(tự chọn sàn giá tốt nhất: XyloNet hoặc Uniswap)'}. Số nhận cuối cùng theo báo giá trực tiếp và mức trượt giá bạn chọn.` : `You are about to swap ${p.amount} ${p.asset} to ${p.toAsset} on Arc ${p.venue && p.venue !== 'best' ? `via ${VENUE_LABEL[p.venue]}` : '(best price of XyloNet or Uniswap)'}. The final amount follows the live quote and your slippage.`)
       : (vi ? `Bạn sắp chuyển ${p.amount} USDC từ Arc Testnet sang Base Sepolia qua Circle CCTP. Có thể cần 2 lần ký (phê duyệt và chuyển); tiền tới đích sau khi Circle xác nhận.` : `You are about to bridge ${p.amount} USDC from Arc Testnet to Base Sepolia via Circle CCTP. It may need 2 signatures (approval and transfer); funds arrive after Circle confirms.`)
   return <p data-presign-summary className="rounded-lg border border-neon-500/20 bg-neon-500/[0.05] px-3 py-2 text-[12.5px] leading-relaxed">{text}</p>
 }
@@ -385,6 +387,12 @@ function ReviewCard({ msg, onChange, onSlipChange, onSpeedChange, onConfirm, onC
           <select id={`${msg.id}-recv`} disabled={locked} value={p.toAsset} onChange={(e) => onChange({ toAsset: e.target.value })} className={field}>
             {TOKENS.map((t) => <option key={t.sym} value={t.sym} className="bg-[#17171d]">{t.sym}</option>)}
           </select>
+          <label htmlFor={`${msg.id}-venue`} className={T.mute}>{tr('Venue')}</label>
+          <select id={`${msg.id}-venue`} disabled={locked} value={p.venue ?? 'best'} onChange={(e) => onChange({ venue: e.target.value as SwapVenueChoice })} className={field}>
+            <option value="best" className="bg-[#17171d]">{tr('Best price')}</option>
+            <option value="xylonet" className="bg-[#17171d]">{VENUE_LABEL.xylonet}</option>
+            <option value="uniswap" className="bg-[#17171d]">{VENUE_LABEL.uniswap}</option>
+          </select>
         </>}
         {f.intent === 'bridge' && <>
           <span className={T.mute}>{tr('Source')}</span>
@@ -425,7 +433,7 @@ function ReviewCard({ msg, onChange, onSlipChange, onSpeedChange, onConfirm, onC
                 {tr(f.intent === 'send'
                   ? 'Live review, then confirm transfer in your wallet — right here.'
                   : f.intent === 'swap'
-                    ? 'Live quote from XyloNet, review, then confirm each step in your wallet — right here.'
+                    ? 'Live quote (XyloNet or Uniswap), review, then confirm each step in your wallet — right here.'
                     : 'Live Circle quote, separate approval and burn confirmations — right here.')}
               </p>
               {/* Slippage selector (Swap only) — changing invalidates any mounted quote */}
@@ -795,7 +803,7 @@ export default function AgentPage() {
     const routed = contextualWallet ? routeAgentMessage('What is my balance?', locale) : routeAgentMessage(q, locale)
     const structured = contextualWallet ? routed.plan : planAgentRequest(q, lang === 'vi' ? 'vi' : 'en')
     const brain = planBrainRequest(contextualWallet ? 'What is my balance?' : q, lang, brainContext())
-    const base: Params = { asset: 'USDC', amount: '', recipient: '', toAsset: 'EURC', dest: 'Base Sepolia' }
+    const base: Params = { asset: 'USDC', amount: '', recipient: '', toAsset: 'EURC', dest: 'Base Sepolia', venue: venueFromText(q) }
     // Filled by the live-evidence preflight below; flows created afterwards carry it.
     const evidence: { value?: Msg['liveEvidence'] } = {}
     const flow = (intent: Intent, params: Params, text: string): Msg => makeFlowMsg(intent, params, text, evidence.value)
@@ -1045,7 +1053,7 @@ export default function AgentPage() {
     }
     patch(m.id, (x) => ({ ...x, handedOff: true }))
     if (f.intent === 'send') { w.setSendDraft({ symbol: p.asset, amount: p.amount, to: p.recipient, review: true }); w.go('send') }
-    else if (f.intent === 'swap') { w.setSwapDraft({ from: p.asset, to: p.toAsset, amount: p.amount }); w.go('swap') }
+    else if (f.intent === 'swap') { w.setSwapDraft({ from: p.asset, to: p.toAsset, amount: p.amount, venue: p.venue }); w.go('swap') }
     else { w.setSwapDraft({ amount: p.amount, dest: p.dest }); w.go('bridge') }
   }
 
@@ -1177,7 +1185,7 @@ export default function AgentPage() {
                   if (f.intent === 'swap') {
                     return (
                       <AgentSwapCard
-                        params={{ account: w.address, from: p.asset, to: p.toAsset, amount: p.amount, slip: f.execSlip ?? '0.5%' }}
+                        params={{ account: w.address, from: p.asset, to: p.toAsset, amount: p.amount, slip: f.execSlip ?? '0.5%', venue: p.venue }}
                         onDone={doneExec}
                         onCancel={dismissExec}
                       />

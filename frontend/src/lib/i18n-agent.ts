@@ -134,6 +134,10 @@ export const AGENT_I18N: Record<string, [string, string, string, string]> = {
   "Draw names with friends": ["Bốc thăm tặng quà cùng bạn bè", "和朋友抽签互赠礼物", "友だちとくじ引き", "친구들과 이름 뽑기"],
   "Your year in review": ["Nhìn lại một năm", "年度回顾", "一年の振り返り", "한 해 돌아보기"],
   "Send a gift": ["Gửi quà", "送礼物", "ギフトを贈る", "선물 보내기"],
+  "Venue": ["Sàn", "交易场所", "取引先", "거래소"],
+  "Best price": ["Giá tốt nhất", "最优价格", "最良価格", "최적 가격"],
+  "Reference prices above are estimates; the live XyloNet / Uniswap quote appears in review.": ["Giá tham khảo ở trên chỉ là ước tính; báo giá trực tiếp XyloNet / Uniswap xuất hiện khi xem lại.", "上方参考价格仅为估算；XyloNet / Uniswap 实时报价会在审查时显示。", "上記の参考価格は概算です。XyloNet / Uniswap のライブ見積もりは確認時に表示されます。", "위 참고 가격은 추정치이며, XyloNet / Uniswap 실시간 견적은 검토 시 표시됩니다."],
+  "Live quote (XyloNet or Uniswap), review, then confirm each step in your wallet — right here.": ["Báo giá trực tiếp (XyloNet hoặc Uniswap), xem lại, rồi xác nhận từng bước trong ví — ngay tại đây.", "实时报价（XyloNet 或 Uniswap），审查后在钱包逐步确认。", "ライブ見積もり（XyloNet または Uniswap）取得後、各ステップをウォレットで確認。", "실시간 견적(XyloNet 또는 Uniswap) 후 각 단계를 지갑에서 확인."],
   // Contacts page — 2026-11-10
   "Payment tools": ["Tiện ích thanh toán", "支付工具", "支払いツール", "결제 도구"],
   "Swap & Bridge": ["Đổi & Chuyển chuỗi", "兑换与跨链", "スワップ＆ブリッジ", "스왑 & 브리지"],

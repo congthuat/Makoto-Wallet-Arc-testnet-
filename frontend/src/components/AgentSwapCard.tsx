@@ -6,12 +6,14 @@
  * separately confirm approval (if needed) and then confirm swap.
  * No auto-transition from approval to swap signing.
  */
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { X } from 'lucide-react'
 import { useWallet } from '../lib/store'
 import { T } from './wallet/ui'
 import { useT } from '../lib/i18n'
 import { LiveSwapControl } from './LiveSwapControl'
+import { VenuePicker } from './VenuePicker'
+import type { SwapVenueChoice } from '../migrated/uniswap.ts'
 
 export type AgentSwapParams = {
   account: string
@@ -19,6 +21,7 @@ export type AgentSwapParams = {
   to: string     // 'USDC' | 'EURC'
   amount: string
   slip: '0.5%' | '1%' | '3%'
+  venue?: SwapVenueChoice
 }
 
 export function AgentSwapCard({ params, onDone, onCancel }: {
@@ -31,6 +34,7 @@ export function AgentSwapCard({ params, onDone, onCancel }: {
   const [, lang] = useT()
   const vi = lang === 'vi'
   const say = useCallback((en: string, vn: string) => vi ? vn : en, [vi])
+  const [venue, setVenue] = useState<SwapVenueChoice>(params.venue ?? 'best')
 
   // onConfirmed: called after approval or swap receipt — triggers wallet refresh
   const onConfirmed = useCallback(async () => {
@@ -58,8 +62,10 @@ export function AgentSwapCard({ params, onDone, onCancel }: {
           <span className="font-num font-semibold text-white">{params.slip}</span>
         </div>
 
+        <VenuePicker value={venue} onChange={setVenue} />
         {/* LiveSwapControl handles all execution logic */}
         <LiveSwapControl
+          venue={venue}
           account={params.account}
           from={params.from}
           to={params.to}

@@ -5,9 +5,9 @@ import { ARC, explorerTx, getProvider } from '../lib/wallet.ts'
 import { SendSubmissionGuard } from '../lib/sendExecution.ts'
 import { rpcRead } from '../lib/arcRpc.ts'
 import { isWalletRejection, pollProtocolReceipt, requestReviewedAction } from '../migrated/protocolExecution.ts'
-import { createReview, evaluateToolPolicy, revalidateReview, verifyFiniteApproval, type ReviewSnapshot } from '../migrated/policy.ts'
-import { prepareApproval, prepareSwap, quoteSwap, readAllowance, readBalance, readWallet, type PreparedToolAction, type SwapToolQuote } from '../migrated/toolLayer.ts'
-import { XYLO_ROUTER } from '../migrated/swap.ts'
+import { createReview, evaluateToolPolicy, revalidateReview, verifySwapApproval, type ReviewSnapshot } from '../migrated/policy.ts'
+import { nextSwapApproval, parseSendAmountSafe, prepareApproval, preparePermit2Approval, prepareSwap, quoteSwap, quoteVenueOutput, readBalance, readStepAllowance, readWallet, type PreparedToolAction, type SwapApprovalStep, type SwapToolQuote } from '../migrated/toolLayer.ts'
+import { VENUE_LABEL, venueGap, type SwapVenue, type SwapVenueChoice } from '../migrated/uniswap.ts'
 import { Button, T } from './wallet/ui.tsx'
 import { SuccessBurst } from './wallet/SuccessBurst.tsx'
 import { useWallet } from '../lib/store.tsx'
@@ -17,9 +17,10 @@ import { createStrategyRun, recoverStrategyRun, restoreStrategyRun, saveStrategy
 
 type Stage = 'idle' | 'review-approval' | 'review-swap' | 'pending' | 'approval-confirmed' | 'confirmed' | 'failed' | 'rejected' | 'unknown'
 type Operation = { generation: number; account: string; chainId?: number; input?: string; run?: StrategyRun; saved: string | null | undefined }
-type Props = { account: string; from: string; to: string; amount: string; slip: '0.5%' | '1%' | '3%'; onConfirmed: () => Promise<unknown>; onComplete: () => void }
+type Props = { account: string; from: string; to: string; amount: string; slip: '0.5%' | '1%' | '3%'; venue?: SwapVenueChoice; onConfirmed: () => Promise<unknown>; onComplete: () => void }
+type Compare = Partial<Record<SwapVenue, bigint>>
 
-export function LiveSwapControl({ account, from, to, amount, slip, onConfirmed, onComplete }: Props) {
+export function LiveSwapControl({ account, from, to, amount, slip, venue: venueChoice = 'best', onConfirmed, onComplete }: Props) {
   const { upsertSwap, swapRecords, walletChainId } = useWallet()
   const [tr, lang] = useT()
   const vi = lang === 'vi'
@@ -35,6 +36,9 @@ export function LiveSwapControl({ account, from, to, amount, slip, onConfirmed, 
   const [review, setReview] = useState<ReviewSnapshot>()
   const [hash, setHash] = useState<Hex>()
   const [reviewedInput, setReviewedInput] = useState('')
+  const [approvalStep, setApprovalStep] = useState<SwapApprovalStep>()
+  const [compare, setCompare] = useState<Compare>({})
+  const resolvedVenue = useRef<{ input: string; venue: SwapVenue } | undefined>(undefined)
   const guard = useRef(new SendSubmissionGuard())
   const run = useRef<StrategyRun | undefined>(undefined)
   const mounted = useRef(false)
@@ -42,7 +46,7 @@ export function LiveSwapControl({ account, from, to, amount, slip, onConfirmed, 
   const operation = useRef<Operation | undefined>(undefined)
   const checkpoint = useRef<string | null | undefined>(undefined)
   const normalizedAccount = account.toLowerCase()
-  const input = `${normalizedAccount}:${from}:${to}:${amount}:${slip}`
+  const input = `${normalizedAccount}:${from}:${to}:${amount}:${slip}:${venueChoice}`
   const context = useRef({ account: normalizedAccount, chainId: walletChainId, input })
   context.current = { account: normalizedAccount, chainId: walletChainId, input }
   const resumeApproval = useRef<() => void>(() => {})
@@ -146,7 +150,7 @@ export function LiveSwapControl({ account, from, to, amount, slip, onConfirmed, 
       needsResume.current = false
       generation.current += 1; operation.current = undefined; setBusy(false)
     }
-    setQuote(undefined); setPrepared(undefined); setReview(undefined); setReviewedInput('')
+    setQuote(undefined); setPrepared(undefined); setReview(undefined); setReviewedInput(''); setApprovalStep(undefined); setCompare({})
     setStage((current) => current === 'review-approval' || current === 'review-swap' || current === 'approval-confirmed' ? 'idle' : current)
   }, [input])
   useEffect(() => { resumeApproval.current() }, [input, walletChainId])
@@ -182,21 +186,44 @@ export function LiveSwapControl({ account, from, to, amount, slip, onConfirmed, 
     requireCurrent(op)
     setErrorFallback('Review unavailable.'); setReview(undefined); setPrepared(undefined)
     setStage(op.run?.phase === 'REVALIDATING' ? 'approval-confirmed' : 'idle')
-    if ((from !== 'USDC' && from !== 'EURC') || (to !== 'USDC' && to !== 'EURC') || from === to) throw new Error('Live Xylo swap supports USDC and EURC only.')
+    if ((from !== 'USDC' && from !== 'EURC') || (to !== 'USDC' && to !== 'EURC') || from === to) throw new Error('Live swap supports USDC and EURC only.')
     const p = getProvider(); if (!p) throw new Error('Wallet unavailable.')
     await walletContext(p); requireCurrent(op)
+    // Read-only price check on both venues: picks "best" and powers the price-gap warning.
+    const units = parseSendAmountSafe(amount, 6)
+    const outputs: Compare = {}
+    if (units) await Promise.all((['xylonet', 'uniswap'] as const).map(async (v) => { try { outputs[v] = await quoteVenueOutput(p, v, from, to, units) } catch { /* venue unavailable */ } }))
+    requireCurrent(op)
+    setCompare(outputs)
+    let venue: SwapVenue
+    if (venueChoice !== 'best') venue = venueChoice
+    else if (resolvedVenue.current?.input === input) venue = resolvedVenue.current.venue
+    else venue = (outputs.uniswap ?? 0n) > (outputs.xylonet ?? 0n) ? 'uniswap' : 'xylonet'
+    resolvedVenue.current = { input, venue }
     // quoteSwap re-reads verified allowance and balances; never reuse the pre-approval quote.
-    const result = await quoteSwap(p, { account, from, to, amount, slippage: slipValue })
+    const result = await quoteSwap(p, { account, from, to, amount, slippage: slipValue, venue })
     requireCurrent(op)
     if (result.status !== 'OK' || !result.data) throw new Error(result.reason ?? 'Live quote unavailable.')
     const fresh = result.data
-    if (op.run?.phase === 'REVALIDATING') advance({ type: 'allowance-reread', sufficient: fresh.allowance >= fresh.quote.amountIn, account, chainId: ARC.chainId, now: Date.now() }, op)
+    if (op.run?.phase === 'REVALIDATING') {
+      // Re-read the allowance granted by the approval that just confirmed (token→spender or Permit2→router).
+      const binding = op.run.binding ?? op.run.approvalReceipt?.binding
+      const required = binding?.requiredUnits && /^\d+$/.test(binding.requiredUnits) ? BigInt(binding.requiredUnits) : fresh.quote.amountIn
+      const granted = binding?.spender ? await readStepAllowance(p, from, binding.spender, account) : undefined
+      requireCurrent(op)
+      const sufficient = granted ? granted.status === 'OK' && granted.data !== undefined && granted.data >= required : fresh.allowance >= fresh.quote.amountIn
+      advance({ type: 'allowance-reread', sufficient, account, chainId: ARC.chainId, now: Date.now() }, op)
+    }
     if (op.run?.phase === 'BLOCKED') throw new Error('Approval receipt did not establish sufficient allowance')
     setQuote(fresh); setReviewedInput(input)
-    if (fresh.allowance < fresh.quote.amountIn) {
-      const approval = await prepareApproval(p, { account, symbol: from, spender: XYLO_ROUTER, amount: fresh.quote.amountIn })
+    const step = nextSwapApproval(fresh)
+    setApprovalStep(step)
+    if (step) {
+      const approval = step.kind === 'permit2'
+        ? await preparePermit2Approval(p, { account, symbol: from, amount: fresh.quote.amountIn })
+        : await prepareApproval(p, { account, symbol: from, spender: step.spender, amount: fresh.quote.amountIn })
       requireCurrent(op)
-      if (!verifyFiniteApproval(approval, { symbol: from, spender: XYLO_ROUTER, amount: fresh.quote.amountIn })) throw new Error('Approval request mismatch')
+      if (!verifySwapApproval(approval, { symbol: from, spender: step.spender, amount: fresh.quote.amountIn })) throw new Error('Approval request mismatch')
       const simulated = await simulate(approval); requireCurrent(op)
       if (!simulated) throw new Error('Finite approval simulation failed.')
       await walletContext(p); requireCurrent(op)
@@ -247,24 +274,26 @@ export function LiveSwapControl({ account, from, to, amount, slip, onConfirmed, 
       const latestPrice = await rpcRead(p, 'eth_gasPrice'); requireCurrent(op)
       if (typeof latestPrice !== 'string' || BigInt(latestPrice) > BigInt(prepared.request.gasPrice)) throw new Error('Network fee changed. Review again.')
       const freshBalance = await readBalance(p, from, account); requireCurrent(op)
-      const freshAllowance = await readAllowance(p, from, XYLO_ROUTER, account); requireCurrent(op)
-      if (freshBalance.status !== 'OK' || !freshBalance.data || freshBalance.data.units < quote.quote.amountIn || freshAllowance.status !== 'OK' || !freshAllowance.data) throw new Error('Balance or allowance changed. Review again.')
-      if (approving) {
-        if (!verifyFiniteApproval(prepared, { symbol: from as 'USDC' | 'EURC', spender: XYLO_ROUTER, amount: quote.quote.amountIn })) throw new Error('Approval request changed')
-        if (freshAllowance.data.units >= quote.quote.amountIn) throw new Error('Approval is already sufficient. Refresh the swap review.')
+      if (freshBalance.status !== 'OK' || !freshBalance.data || freshBalance.data.units < quote.quote.amountIn) throw new Error('Balance or allowance changed. Review again.')
+      if (approving && !approvalStep) throw new Error('Review unavailable.')
+      if (approving && approvalStep) {
+        const stepAllowance = await readStepAllowance(p, from, approvalStep.spender, account); requireCurrent(op)
+        if (stepAllowance.status !== 'OK' || stepAllowance.data === undefined) throw new Error('Balance or allowance changed. Review again.')
+        if (!verifySwapApproval(prepared, { symbol: from as 'USDC' | 'EURC', spender: approvalStep.spender, amount: quote.quote.amountIn })) throw new Error('Approval request changed')
+        if (stepAllowance.data >= quote.quote.amountIn) throw new Error('Approval is already sufficient. Refresh the swap review.')
         const simulated = await simulate(prepared); requireCurrent(op)
         if (!simulated) throw new Error('Approval simulation failed.')
       } else {
         if (!review) throw new Error('Review unavailable.')
-        const freshQuote = await quoteSwap(p, { account, from: from as 'USDC' | 'EURC', to: to as 'USDC' | 'EURC', amount, slippage: slipValue }); requireCurrent(op)
+        const freshQuote = await quoteSwap(p, { account, from: from as 'USDC' | 'EURC', to: to as 'USDC' | 'EURC', amount, slippage: slipValue, venue: quote.venue }); requireCurrent(op)
         if (freshQuote.status !== 'OK' || !freshQuote.data) throw new Error('Fresh quote unavailable.')
         const simulation = await simulate(prepared) ? 'passed' : 'reverted'; requireCurrent(op)
-        const validated = revalidateReview(review, { action: prepared, quote: freshQuote.data, account, chainId: ARC.chainId, simulation, now: Date.now(), balance: freshBalance.data.units, allowance: freshAllowance.data.units })
+        const validated = revalidateReview(review, { action: prepared, quote: freshQuote.data, account, chainId: ARC.chainId, simulation, now: Date.now(), balance: freshBalance.data.units, allowance: freshQuote.data.allowance })
         if (validated.status !== 'OK') throw new Error(validated.reason ?? 'Review changed.')
       }
       await walletContext(p); requireCurrent(op)
       if (Date.now() > prepared.expiresAt || Date.now() > quote.expiresAt) throw new Error('Quote expired. Review again.')
-      advance({ type: 'wallet-request', binding: { from: prepared.account, to: prepared.request.to, data: prepared.request.data, symbol: from as 'USDC' | 'EURC', amount, ...(approving ? { spender: XYLO_ROUTER, requiredUnits: quote.quote.amountIn.toString() } : { outputSymbol: to as 'USDC' | 'EURC', minimumOutputUnits: quote.minimumReceive.toString() }) }, now: Date.now() }, op)
+      advance({ type: 'wallet-request', binding: { from: prepared.account, to: prepared.request.to, data: prepared.request.data, symbol: from as 'USDC' | 'EURC', amount, ...(approving ? { spender: approvalStep!.spender, requiredUnits: quote.quote.amountIn.toString() } : { outputSymbol: to as 'USDC' | 'EURC', minimumOutputUnits: quote.minimumReceive.toString() }) }, now: Date.now() }, op)
       setHash(undefined)
       // Once the wallet request begins, input edits cannot erase its receipt
       // evidence. They still prevent preparing a dependent review for old inputs.
@@ -283,7 +312,7 @@ export function LiveSwapControl({ account, from, to, amount, slip, onConfirmed, 
       if (isCurrent(op)) setHash(submitted)
       if (!approving) recordActivity(recordFor(submitted, prepared, quote, 'pending'), op)
       if (!isCurrent(op)) return
-      const outcome = await pollProtocolReceipt(p, prepared, submitted, approving ? { approval: { symbol: from as 'USDC' | 'EURC', spender: XYLO_ROUTER, minimum: quote.quote.amountIn } } : { swapQuote: quote }, () => { if (isCurrent(op) && op.run?.phase === 'SUBMITTED') advance({ type: 'pending', now: Date.now() }, op) })
+      const outcome = await pollProtocolReceipt(p, prepared, submitted, approving ? { approval: { symbol: from as 'USDC' | 'EURC', spender: approvalStep!.spender, minimum: quote.quote.amountIn } } : { swapQuote: quote }, () => { if (isCurrent(op) && op.run?.phase === 'SUBMITTED') advance({ type: 'pending', now: Date.now() }, op) })
       if (!isCurrent(op)) return
       advance({ type: outcome === 'confirmed' ? 'confirmed' : outcome === 'failed' ? 'failed' : 'unknown', now: Date.now() }, op)
       if (!approving) recordActivity(recordFor(submitted, prepared, quote, outcome === 'confirmed' ? 'completed' : outcome), op)
@@ -354,9 +383,19 @@ export function LiveSwapControl({ account, from, to, amount, slip, onConfirmed, 
 
   const completedActivity = Array.isArray(swapRecords) && swapRecords.some((record) => typeof record?.hash === 'string' && typeof record.account === 'string' && record.hash.toLowerCase() === hash?.toLowerCase() && record.account.toLowerCase() === normalizedAccount && record.status === 'completed')
   return <div className="mt-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5 text-[13px] space-y-3" aria-live="polite">
-    <div className="font-semibold">{say('Live XyloNet swap', 'Hoán đổi trực tiếp qua XyloNet')}</div>
+    <div className="font-semibold">{say('Live swap', 'Hoán đổi trực tiếp')} · {quote ? VENUE_LABEL[quote.venue] : venueChoice === 'best' ? say('best price', 'giá tốt nhất') : VENUE_LABEL[venueChoice]}</div>
+    {quote && (compare.xylonet !== undefined || compare.uniswap !== undefined) && <div className="grid grid-cols-2 gap-2">
+      {(['xylonet', 'uniswap'] as const).map((v) => <div key={v} className={`rounded-xl border px-2.5 py-1.5 ${quote.venue === v ? 'border-neon-400/60 bg-neon-500/10' : 'border-white/[0.08]'}`}>
+        <div className={`text-[11px] ${T.mute}`}>{VENUE_LABEL[v]}{quote.venue === v ? ` · ${say('selected', 'đang chọn')}` : ''}</div>
+        <div className="font-num font-semibold">{compare[v] !== undefined ? `${Number(formatUnits(compare[v]!, 6)).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${to}` : say('unavailable', 'không có giá')}</div>
+      </div>)}
+    </div>}
+    {quote && compare.xylonet !== undefined && compare.uniswap !== undefined && venueGap(compare.xylonet, compare.uniswap) >= 5 && <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-amber-200 text-[12px]">
+      {say(`The two venues differ by ${venueGap(compare.xylonet, compare.uniswap).toFixed(1)}%. Testnet pools can be badly mispriced — check what you receive before confirming.`, `Giá giữa hai sàn lệch ${venueGap(compare.xylonet, compare.uniswap).toFixed(1)}%. Pool trên testnet có thể lệch giá nhiều — hãy xem kỹ số nhận được trước khi xác nhận.`)}
+      {(compare[quote.venue] ?? 0n) < (compare[quote.venue === 'uniswap' ? 'xylonet' : 'uniswap'] ?? 0n) && ` ${say(`${VENUE_LABEL[quote.venue === 'uniswap' ? 'xylonet' : 'uniswap']} gives more.`, `${VENUE_LABEL[quote.venue === 'uniswap' ? 'xylonet' : 'uniswap']} cho nhiều hơn.`)}`}
+    </p>}
     {quote && <div className={T.sub}>{say('Live output', 'Nhận dự kiến')}: {formatUnits(quote.quote.amountOut, 6)} {to} · {say('Minimum', 'Tối thiểu')}: {formatUnits(quote.minimumReceive, 6)} {to} · {say('Quote expires in 45 seconds', 'Báo giá hết hạn sau 45 giây')}</div>}
-    {stage === 'review-approval' && prepared && <p>{say('Review finite approval', 'Xem lại phê duyệt hữu hạn')}: {formatUnits(quote!.quote.amountIn, 6)} {from} · XyloNet · {say('wallet confirmation required', 'cần xác nhận trong ví')}</p>}
+    {stage === 'review-approval' && prepared && <p>{say('Review finite approval', 'Xem lại phê duyệt hữu hạn')}{quote?.venue === 'uniswap' ? ` (${approvalStep?.kind === 'permit2' ? say('step 2/2: Permit2 → Uniswap router', 'bước 2/2: Permit2 → router Uniswap') : say('step 1/2: token → Permit2', 'bước 1/2: token → Permit2')})` : ''}: {formatUnits(quote!.quote.amountIn, 6)} {from} · {VENUE_LABEL[quote!.venue]} · {say('wallet confirmation required', 'cần xác nhận trong ví')}</p>}
     {stage === 'review-swap' && prepared && <p>{say('Review exact wallet request', 'Xem lại yêu cầu ví chính xác')}: {amount} {from} → {to} · {say('maximum gas', 'gas tối đa')} {BigInt(prepared.request.gas) * BigInt(prepared.request.gasPrice)} wei</p>}
     {stage === 'pending' && <p>{say('Submitted or awaiting receipt. Do not retry until the hash is checked.', 'Đã gửi hoặc đang chờ biên nhận. Đừng thử lại trước khi kiểm tra mã giao dịch.')}</p>}
     {stage === 'approval-confirmed' && <p>{busy ? say('Approval confirmed. Preparing a fresh swap review. The swap still needs your separate wallet confirmation.', 'Phê duyệt đã xác nhận. Đang chuẩn bị báo giá mới. Bạn vẫn cần xác nhận hoán đổi riêng trong ví.') : say('Approval confirmed. A fresh swap review is required before your separate wallet confirmation.', 'Phê duyệt đã xác nhận. Cần chuẩn bị báo giá mới trước khi bạn xác nhận hoán đổi riêng trong ví.')}</p>}

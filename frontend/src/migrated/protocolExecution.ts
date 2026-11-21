@@ -1,7 +1,7 @@
 import { decodeEventLog, erc20Abi, isHash, type Hex } from 'viem'
 import type { SendProvider } from '../lib/sendExecution.ts'
 import { isWalletRejection, SendSubmissionGuard } from '../lib/sendExecution.ts'
-import { readAllowance, readReceipt, type PreparedToolAction, type SwapToolQuote } from './toolLayer.ts'
+import { readReceipt, readStepAllowance, type PreparedToolAction, type SwapToolQuote } from './toolLayer.ts'
 import { getAssetById } from './assets.ts'
 import { executePreparedCctpCall, hasOfficialCctpMessageEvent } from '../protocols/circle/cctpAdapter.ts'
 import { rpcRead } from '../lib/arcRpc.ts'
@@ -37,8 +37,8 @@ export async function checkProtocolReceipt(p: SendProvider, action: PreparedTool
     if (!receipt || !transaction || (transaction.hash as string)?.toLowerCase() !== hash.toLowerCase() || (transaction.to as string)?.toLowerCase() !== action.request.to.toLowerCase() || (transaction.from as string)?.toLowerCase() !== action.account.toLowerCase() || (transaction.input as string)?.toLowerCase() !== action.request.data.toLowerCase()) return 'unknown'
     if (action.kind === 'approval') {
       if (!options.approval) return 'unknown'
-      const current = await readAllowance(p, options.approval.symbol, options.approval.spender, action.account)
-      return current.status === 'OK' && current.data && current.data.units >= options.approval.minimum ? 'confirmed' : 'unknown'
+      const current = await readStepAllowance(p, options.approval.symbol, options.approval.spender, action.account)
+      return current.status === 'OK' && current.data !== undefined && current.data >= options.approval.minimum ? 'confirmed' : 'unknown'
     }
     if (action.kind === 'cctp-burn') return hasOfficialCctpMessageEvent(action.account, (receipt.logs ?? []) as Parameters<typeof hasOfficialCctpMessageEvent>[1]) ? 'confirmed' : 'unknown'
     if (!options.swapQuote) return 'unknown'

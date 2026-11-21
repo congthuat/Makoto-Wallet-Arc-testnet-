@@ -10,6 +10,8 @@ import { useDismissibleOverlay } from '../lib/useDismissibleOverlay'
 import { prepareBrainReview } from '../brain/policy'
 import type { BrainPreparation } from '../brain/types'
 import { LiveSwapControl } from '../components/LiveSwapControl'
+import { VenuePicker } from '../components/VenuePicker'
+import type { SwapVenueChoice } from '../migrated/uniswap.ts'
 import { LiveCctpControl, type LiveQuote } from '../components/LiveCctpControl'
 import { restoreStrategyInput, type StrategyRun } from '../migrated/strategyController'
 
@@ -43,6 +45,7 @@ function SwapForm() {
   const [amount, setAmount] = useState(restored?.amount ?? '')
   const [slip, setSlip] = useState<'0.5%' | '1%' | '3%'>(restored?.kind === 'swap' ? restored.slip : '0.5%')
   const [showSet, setShowSet] = useState(false)
+  const [venue, setVenue] = useState<SwapVenueChoice>('best')
   const settingsTriggerRef = useRef<HTMLButtonElement>(null)
   const settingsPanelRef = useRef<HTMLDivElement>(null)
   const closeSettings = useCallback(() => setShowSet(false), [])
@@ -53,6 +56,7 @@ function SwapForm() {
     if (swapDraft.from) setFrom(swapDraft.from)
     if (swapDraft.to) setTo(swapDraft.to)
     if (swapDraft.amount) setAmount(swapDraft.amount)
+    if (swapDraft.venue) setVenue(swapDraft.venue)
     setSwapDraft(null)
   }, [swapDraft, setSwapDraft])
 
@@ -125,8 +129,8 @@ function SwapForm() {
               <div className="flex justify-between"><span className={`${T.mute} inline-flex items-center gap-1`}><Route size={13} /> {tr('Route (preview)')}</span><span>{tr('Arc StableSwap pool')}</span></div>
             </div>
           )}
-          {mode === 'connected' && address ? <LiveSwapControl account={address} from={from} to={to} amount={amount} slip={slip} onConfirmed={async () => { await refetchWallet() }} onComplete={() => { setAmount(''); setFrom('USDC'); setTo('EURC'); setSlip('0.5%') }} /> : <Button variant="primary" size="lg" className="w-full mt-4" disabled={!amt || !!err} onClick={() => { const review = prepareBrainReview(brainAction(), brainContext()); if (review.assessment.status === 'blocked') notify(tr(review.assessment.blockers[0] ?? 'Swap blocked by safety policy'), 'err'); else notify(tr('Safety review prepared — a fresh live quote and simulation are required before wallet confirmation')) }}>{err ?? tr(amt ? 'Review swap (preview)' : 'Enter an amount')}</Button>}
-          <p className={`mt-2 text-[12px] text-center ${T.mute}`}>{tr(mode === 'connected' ? 'Reference prices above are estimates; the live XyloNet quote appears in review.' : 'Based on reference prices. You’ll see the final quote before signing.')}</p>
+          {mode === 'connected' && address ? <><div className="mt-4"><VenuePicker value={venue} onChange={setVenue} /></div><LiveSwapControl account={address} from={from} to={to} amount={amount} slip={slip} venue={venue} onConfirmed={async () => { await refetchWallet() }} onComplete={() => { setAmount(''); setFrom('USDC'); setTo('EURC'); setSlip('0.5%') }} /></> : <Button variant="primary" size="lg" className="w-full mt-4" disabled={!amt || !!err} onClick={() => { const review = prepareBrainReview(brainAction(), brainContext()); if (review.assessment.status === 'blocked') notify(tr(review.assessment.blockers[0] ?? 'Swap blocked by safety policy'), 'err'); else notify(tr('Safety review prepared — a fresh live quote and simulation are required before wallet confirmation')) }}>{err ?? tr(amt ? 'Review swap (preview)' : 'Enter an amount')}</Button>}
+          <p className={`mt-2 text-[12px] text-center ${T.mute}`}>{tr(mode === 'connected' ? 'Reference prices above are estimates; the live XyloNet / Uniswap quote appears in review.' : 'Based on reference prices. You’ll see the final quote before signing.')}</p>
         </Card>
         <Card className="p-5">
           <div className="text-[14px] font-semibold">{tr('Why swap on Arc?')}</div>

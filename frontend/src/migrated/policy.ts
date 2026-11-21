@@ -3,6 +3,7 @@ import { ARC, TOKENS } from '../lib/wallet.ts'
 import type { PreparedToolAction, SwapToolQuote, BridgeToolQuote, ToolResult } from './toolLayer.ts'
 import { BASE_SEPOLIA_CCTP_DOMAIN, CCTP_KIT_BRIDGE_TESTNET } from './cctp.ts'
 import { XYLO_ROUTER } from './swap.ts'
+import { decodePermit2Approval, PERMIT2, PERMIT2_EXPIRY_SECONDS, UNI_ROUTER } from './uniswap.ts'
 import { sameCctpActionMaterial, sameCctpQuoteMaterial } from '../protocols/circle/cctpAdapter.ts'
 
 /** Adapted from donor policyEngine precedence and transactionOrchestrator request binding. */
@@ -28,12 +29,27 @@ export const requestId = (value: PreparedToolAction): Hex => keccak256(stringToH
 export function verifyFiniteApproval(action: PreparedToolAction, expected: { symbol: 'USDC' | 'EURC'; spender: string; amount: bigint }): boolean {
   if (action.kind !== 'approval' || action.chainId !== ARC.chainId || action.request.from.toLowerCase() !== action.account.toLowerCase() || action.request.value !== '0x0') return false
   const token = TOKENS.find((item) => item.sym === expected.symbol)
-  if (!token || !same(action.request.to, token.address) || ![XYLO_ROUTER, CCTP_KIT_BRIDGE_TESTNET].some((spender) => same(spender, expected.spender))) return false
+  if (!token || !same(action.request.to, token.address) || ![XYLO_ROUTER, CCTP_KIT_BRIDGE_TESTNET, PERMIT2].some((spender) => same(spender, expected.spender))) return false
   if (expected.amount <= 0n || expected.amount >= (1n << 256n) - 1n) return false
   try {
     const decoded = decodeFunctionData({ abi: erc20Abi, data: action.request.data })
     return decoded.functionName === 'approve' && same(decoded.args[0], expected.spender) && decoded.args[1] === expected.amount
   } catch { return false }
+}
+
+/** Permit2 approval: official Permit2 contract, canonical token, official Universal Router, exact amount, short expiry. */
+export function verifyPermit2Approval(action: PreparedToolAction, expected: { symbol: 'USDC' | 'EURC'; amount: bigint }, nowMs = Date.now()): boolean {
+  if (action.kind !== 'approval' || action.chainId !== ARC.chainId || action.request.from.toLowerCase() !== action.account.toLowerCase() || action.request.value !== '0x0' || !same(action.request.to, PERMIT2)) return false
+  const token = TOKENS.find((item) => item.sym === expected.symbol)
+  const decoded = decodePermit2Approval(action.request.data)
+  const nowSec = Math.floor(nowMs / 1000)
+  return !!token && !!decoded && same(decoded.token, token.address) && same(decoded.spender, UNI_ROUTER) && decoded.amount === expected.amount && expected.amount > 0n
+    && decoded.expiration > nowSec && decoded.expiration <= nowSec + PERMIT2_EXPIRY_SECONDS + 600
+}
+
+/** One reviewed approval step for a swap venue (ERC20 approve or Permit2 approve). */
+export function verifySwapApproval(action: PreparedToolAction, expected: { symbol: 'USDC' | 'EURC'; spender: string; amount: bigint }): boolean {
+  return same(expected.spender, UNI_ROUTER) ? verifyPermit2Approval(action, expected) : verifyFiniteApproval(action, expected)
 }
 
 export function evaluateToolPolicy(input: {
@@ -57,7 +73,8 @@ export function evaluateToolPolicy(input: {
   if (now < action.preparedAt || now > action.expiresAt) add('REVIEW_EXPIRED', 'REVALIDATE')
   if (now > quote.expiresAt) add('QUOTE_EXPIRED', 'REQUOTE')
   if (action.kind === 'swap') {
-    if (!('quote' in quote) || !same(action.request.to, XYLO_ROUTER)) add('UNTRUSTED_SWAP_ROUTE', 'BLOCK')
+    const route = 'quote' in quote ? (quote.venue === 'uniswap' ? UNI_ROUTER : XYLO_ROUTER) : undefined
+    if (!('quote' in quote) || !route || !same(action.request.to, route) || !same(quote.quote.router, route)) add('UNTRUSTED_SWAP_ROUTE', 'BLOCK')
     else {
       if (quote.minimumReceive <= 0n || quote.minimumReceive > quote.quote.amountOut || ![0.005, 0.01, 0.03].includes(quote.slippage)) add('INVALID_SLIPPAGE', 'BLOCK')
       if (input.balance === undefined || input.balance < quote.quote.amountIn) add('INSUFFICIENT_BALANCE', 'REVALIDATE')
@@ -109,7 +126,7 @@ export function revalidateReview(snapshot: ReviewSnapshot, fresh: { action: Prep
   if (snapshot.action.kind === 'cctp-burn' || snapshot.action.kind === 'approval') {
     if (!('totalDebit' in snapshot.quote) || !('totalDebit' in fresh.quote) || !sameCctpQuoteMaterial(snapshot.quote, fresh.quote) || !sameCctpActionMaterial(snapshot.action, fresh.action)) return { status: 'STALE', source: 'Makoto Policy', observedAt: fresh.now, reason: 'CCTP request or fee semantics changed' }
   }
-  if ('quote' in snapshot.quote && (!('quote' in fresh.quote) || fresh.quote.quote.amountIn !== snapshot.quote.quote.amountIn || fresh.quote.quote.fromAssetId !== snapshot.quote.quote.fromAssetId || fresh.quote.quote.toAssetId !== snapshot.quote.quote.toAssetId || fresh.quote.quote.amountOut !== snapshot.quote.quote.amountOut || fresh.quote.minimumReceive !== snapshot.quote.minimumReceive || fresh.quote.slippage !== snapshot.quote.slippage || fresh.quote.provider !== snapshot.quote.provider)) return { status: 'STALE', source: 'Makoto Policy', observedAt: fresh.now, reason: 'Swap quote changed. Review again.' }
+  if ('quote' in snapshot.quote && (!('quote' in fresh.quote) || fresh.quote.quote.amountIn !== snapshot.quote.quote.amountIn || fresh.quote.quote.fromAssetId !== snapshot.quote.quote.fromAssetId || fresh.quote.quote.toAssetId !== snapshot.quote.quote.toAssetId || fresh.quote.quote.amountOut !== snapshot.quote.quote.amountOut || fresh.quote.minimumReceive !== snapshot.quote.minimumReceive || fresh.quote.slippage !== snapshot.quote.slippage || fresh.quote.provider !== snapshot.quote.provider || fresh.quote.venue !== snapshot.quote.venue)) return { status: 'STALE', source: 'Makoto Policy', observedAt: fresh.now, reason: 'Swap quote changed. Review again.' }
   if ('totalDebit' in snapshot.quote && (!('totalDebit' in fresh.quote) || fresh.quote.totalDebit !== snapshot.quote.totalDebit || fresh.quote.expectedReceive < snapshot.quote.expectedReceive || fresh.quote.destinationChainId !== snapshot.quote.destinationChainId)) return { status: 'STALE', source: 'Makoto Policy', observedAt: fresh.now, reason: 'CCTP fee or route changed' }
   const result = evaluateToolPolicy({ ...fresh, action: fresh.action, quote: fresh.quote })
   return result.mustStop ? { status: 'UNAVAILABLE', source: 'Makoto Policy', observedAt: fresh.now, reason: result.findings.map((f) => f.code).join(', ') } : { status: 'OK', source: 'Makoto Policy', observedAt: fresh.now, data: result }

@@ -53,7 +53,8 @@ export function transitionStrategy(run: StrategyRun, event: StrategyEvent): Stra
     if (event.account.toLowerCase() !== run.account || event.chainId !== run.chainId || event.expiresAt <= event.now || !event.quoteFresh || !event.policyPassed || !event.simulationPassed) return reject('Account, chain, quote, policy, simulation or review expiry changed')
     const input = event.input === undefined ? run.input : validatedInput(event.input, run.protocol)
     if (event.input !== undefined && !input) return reject('Invalid strategy input')
-    if (event.step === 'approval' && run.phase === 'IDLE') return changed(run, 'REVIEW_APPROVAL', event.now, { step: 'approval', input, hash: undefined, binding: undefined })
+    // Uniswap needs two approvals (token→Permit2, then Permit2→router); the second follows a re-read.
+    if (event.step === 'approval' && (run.phase === 'IDLE' || (run.protocol === 'swap' && run.phase === 'REQUOTING'))) return changed(run, 'REVIEW_APPROVAL', event.now, { step: 'approval', input, hash: undefined, binding: undefined })
     if (event.step === (run.protocol === 'swap' ? 'swap' : 'cctp-burn') && (run.phase === 'IDLE' || run.phase === 'REQUOTING')) return changed(run, 'REVIEW_ACTION', event.now, { step: event.step, input, hash: undefined, binding: undefined })
     return reject('Dependent review requires fresh evidence')
   }
