@@ -219,7 +219,10 @@ export async function getOfficialCctpQuote(
   const fee = await route.provider.getMaxFee(params)
   if (fee.providerFee < 0n || fee.forwarderFee < 0n) throw new Error('Circle returned a negative CCTP fee')
   const maxFee = fee.providerFee + fee.forwarderFee
-  if (maxFee >= input.amount) throw new Error('CCTP fee cap is greater than or equal to the USDC amount')
+  if (maxFee >= input.amount) {
+    const feeUsdc = (Math.ceil(Number(maxFee) / 10_000) / 100).toFixed(2)
+    throw new Error(`CCTP fee cap is greater than or equal to the USDC amount: Circle's fee to ${route.destination.name} is about ${feeUsdc} USDC right now. Enter more than ${feeUsdc} USDC.`)
+  }
   const quote: BridgeToolQuote = Object.freeze({
     account: getAddress(input.account),
     sourceChainId: ARC.chainId,

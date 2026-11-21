@@ -557,6 +557,10 @@ export function LiveCctpControl({ account, amount, transferSpeed, destinationCha
   function describeCctpErrorVi(msg: string): string {
     if (!msg) return ''
     const m = msg.toLowerCase()
+    if (m.includes('fee cap is greater than or equal')) {
+      const fee = /about ([\d.]+) usdc/.exec(m)?.[1]
+      return fee ? `Phí Circle để chuyển tới ${shownDest.name} hiện khoảng ${fee} USDC — nhiều hơn số tiền bạn nhập. Hãy nhập hơn ${fee} USDC.` : 'Phí Circle lớn hơn số tiền bạn nhập. Hãy nhập số lớn hơn.'
+    }
     if (m.includes('circle fee quote unavailable') || m.includes('getmaxfee') || m.includes('official circle fee')) return 'Không lấy được báo giá Circle. Vui lòng thử lại.'
     if (m.includes('rpc') && (m.includes('timeout') || m.includes('timed out'))) return 'Kết nối Arc RPC đã hết thời gian. Vui lòng thử lại. [RPC_TIMEOUT]'
     if (m.includes('gas estimate') || m.includes('gasestimate') || m.includes('invalid gas')) return 'Không ước tính được phí gas. Vui lòng thử lại. [GAS_UNAVAILABLE]'
