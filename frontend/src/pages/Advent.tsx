@@ -74,7 +74,7 @@ export default function AdventPage() {
 
   return (
     <div className="max-w-[920px] space-y-5">
-      <div className="relative overflow-hidden rounded-[24px] border border-emerald-300/20 p-5 sm:p-6 mk-in mk-festive">
+      <div className="relative overflow-hidden rounded-[24px] border border-emerald-300/20 p-5 sm:p-6 mk-in mk-xmas-card">
         <div className="mk-gift-snow absolute inset-0 pointer-events-none" aria-hidden>
           {flakes.map((f, i) => <span key={i} style={{ left: `${f.left}%`, width: f.size, height: f.size, opacity: 0.6, animationDuration: `${f.dur}s`, animationDelay: `${f.delay}s` }} />)}
         </div>

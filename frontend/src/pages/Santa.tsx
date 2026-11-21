@@ -39,7 +39,7 @@ export default function SantaPage() {
 
   return (
     <div className="max-w-[880px] space-y-5">
-      <div className="relative overflow-hidden rounded-[24px] border border-rose-300/20 p-5 sm:p-6 mk-in mk-festive">
+      <div className="relative overflow-hidden rounded-[24px] border border-rose-300/20 p-5 sm:p-6 mk-in mk-xmas-card">
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <div className="text-[52px] leading-none mk-float" aria-hidden>🎅</div>
           <div className="flex-1">

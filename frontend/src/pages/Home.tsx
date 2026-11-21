@@ -273,7 +273,7 @@ function FestiveBanner() {
   const festive = useFestive()
   if (!festive) return null
   return (
-    <section className="mk-in mk-festive relative overflow-hidden rounded-[22px] border border-rose-300/25 p-4 sm:p-5">
+    <section className="mk-in mk-xmas-card relative overflow-hidden rounded-[22px] border border-rose-300/25 p-4 sm:p-5">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
         <div className="text-[40px] leading-none mk-float" aria-hidden>🎄</div>
         <div className="flex-1 min-w-0">
