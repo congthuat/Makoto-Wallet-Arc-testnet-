@@ -273,7 +273,7 @@ function FestiveBanner() {
   const festive = useFestive()
   if (!festive) return null
   return (
-    <section className="mk-in relative overflow-hidden rounded-[22px] border border-rose-300/25 p-4 sm:p-5" style={{ background: 'radial-gradient(90% 120% at 0% 0%, rgba(239,68,68,.28), transparent 60%), radial-gradient(90% 120% at 100% 100%, rgba(34,197,94,.25), transparent 60%), #15121a' }}>
+    <section className="mk-in mk-festive relative overflow-hidden rounded-[22px] border border-rose-300/25 p-4 sm:p-5">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
         <div className="text-[40px] leading-none mk-float" aria-hidden>🎄</div>
         <div className="flex-1 min-w-0">

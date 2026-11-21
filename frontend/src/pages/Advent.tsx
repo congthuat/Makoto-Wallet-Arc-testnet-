@@ -74,7 +74,7 @@ export default function AdventPage() {
 
   return (
     <div className="max-w-[920px] space-y-5">
-      <div className="relative overflow-hidden rounded-[24px] border border-emerald-300/20 p-5 sm:p-6 mk-in" style={{ background: 'radial-gradient(80% 120% at 0% 0%, rgba(34,197,94,.28), transparent 60%), radial-gradient(70% 120% at 100% 100%, rgba(239,68,68,.25), transparent 60%), #0f1512' }}>
+      <div className="relative overflow-hidden rounded-[24px] border border-emerald-300/20 p-5 sm:p-6 mk-in mk-festive">
         <div className="mk-gift-snow absolute inset-0 pointer-events-none" aria-hidden>
           {flakes.map((f, i) => <span key={i} style={{ left: `${f.left}%`, width: f.size, height: f.size, opacity: 0.6, animationDuration: `${f.dur}s`, animationDelay: `${f.delay}s` }} />)}
         </div>

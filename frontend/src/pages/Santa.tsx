@@ -39,7 +39,7 @@ export default function SantaPage() {
 
   return (
     <div className="max-w-[880px] space-y-5">
-      <div className="relative overflow-hidden rounded-[24px] border border-rose-300/20 p-5 sm:p-6 mk-in" style={{ background: 'radial-gradient(80% 120% at 0% 0%, rgba(239,68,68,.25), transparent 60%), radial-gradient(70% 120% at 100% 100%, rgba(34,197,94,.2), transparent 60%), #15121a' }}>
+      <div className="relative overflow-hidden rounded-[24px] border border-rose-300/20 p-5 sm:p-6 mk-in mk-festive">
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <div className="text-[52px] leading-none mk-float" aria-hidden>🎅</div>
           <div className="flex-1">
