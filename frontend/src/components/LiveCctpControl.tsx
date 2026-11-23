@@ -540,6 +540,33 @@ export function LiveCctpControl({ account, amount, transferSpeed, destinationCha
     onComplete()
   }
 
+  // Once the Arc burn is confirmed nothing else needs the user's signature: Circle
+  // attests and forwards on its own, and Activity keeps reconciling the saved record.
+  // Hand the wait off to Activity so another bridge can start right away.
+  const handOffStages: Stage[] = ['source-confirmed', 'attestation-pending', 'attestation-available', 'forwarding-pending', 'destination-pending', 'status-unavailable']
+  const canHandOff = !busy && !operation.current && handOffStages.includes(stage) && run.current?.step === 'cctp-burn'
+    && ['SOURCE_CONFIRMED', 'DESTINATION_PENDING'].includes(run.current?.phase ?? '') && Boolean(run.current?.hash && run.current?.binding)
+  function handOff() {
+    if (!canHandOff || !mounted.current || savedCheckpoint(normalizedAccount) !== checkpoint.current) return
+    const saved = run.current
+    const binding = saved?.binding
+    if (!saved?.hash || !binding) return
+    const tracked = activityRecords.current.some((record) => typeof record?.hash === 'string' && record.hash.toLowerCase() === saved.hash!.toLowerCase())
+    if (!tracked && !recordActivity({
+      hash: saved.hash, account: saved.account, target: binding.to, calldata: binding.data,
+      amount: binding.amount ?? '0', expectedReceiveUnits: binding.expectedReceiveUnits ?? '0',
+      destinationDomain: binding.destinationDomain, maxFeeUnits: binding.maxFeeUnits,
+      finalityThreshold: binding.finalityThreshold, timestamp: saved.updatedAt,
+      ...(destinationHash ? { destinationHash } : {}), status: destinationHash ? 'destination-pending' : 'source-confirmed',
+    })) return
+    try { rememberRun(createStrategyRun('cctp', account)) }
+    catch (caught) { setError(caught instanceof Error ? caught.message : 'CCTP status unavailable.'); return }
+    setStage('idle'); setQuote(undefined); setPrepared(undefined); setReview(undefined); setReviewedInput('')
+    setHash(undefined); setDestinationHash(''); setError(''); setActivityUnavailable(false)
+    onQuoteChange?.(undefined)
+    onComplete()
+  }
+
   function cancelReview() {
     if (operation.current || !mounted.current || savedCheckpoint(normalizedAccount) !== checkpoint.current) return
     try { rememberRun(newReviewRun()) }
@@ -637,5 +664,6 @@ export function LiveCctpControl({ account, amount, transferSpeed, destinationCha
     {stage === 'destination-confirmed' && <Button variant="primary" disabled={busy} onClick={complete}>{say('Done', 'Hoàn tất')}</Button>}
     {(stage === 'review-approval' || stage === 'review-burn') && <div className="flex gap-2 flex-wrap"><Button variant="primary" disabled={busy} onClick={confirm}>{busy ? say('Checking…', 'Đang kiểm tra…') : stage === 'review-approval' ? say('Review exact approval', 'Xem phê duyệt chính xác') : say('Review CCTP burn', 'Xem lệnh đốt CCTP')}</Button><Button disabled={busy} onClick={cancelReview}>{say('Cancel', 'Hủy')}</Button></div>}
     {hash && (['source-pending', 'source-unknown', 'source-confirmed', 'attestation-pending', 'attestation-available', 'forwarding-pending', 'forwarding-failed', 'destination-pending', 'destination-failed', 'status-unavailable'].includes(stage) || stage === 'destination-confirmed' && !completedActivity) && <Button disabled={busy} onClick={checkAgain}>{run.current?.step === 'approval' ? say('Check approval receipt', 'Kiểm tra biên nhận cấp quyền') : say(`Check Arc receipt, Circle status and ${dn} destination`, `Kiểm tra biên nhận Arc, trạng thái Circle và đích ${dn}`)}</Button>}
+    {canHandOff && <div className="mt-2 space-y-1.5"><Button variant="primary" onClick={handOff}>{say('Start a new bridge', 'Bridge lượt mới')}</Button><p className="text-[11.5px] text-white/50">{say(`Your Arc burn is confirmed — Circle delivers to ${dn} on its own. This transfer stays tracked in Activity while you start another.`, `Lệnh đốt trên Arc đã xác nhận — Circle sẽ tự chuyển tới ${dn}. Lượt này vẫn được theo dõi trong Hoạt động, bạn có thể bridge lượt khác ngay.`)}</p></div>}
   </div>
 }
